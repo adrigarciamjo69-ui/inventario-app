@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import {
   Package, Users, LogOut, Menu, X,
-  ChevronRight, LayoutDashboard, Shield, Tag, Map, Package2, Users2, FileText, Settings
+  ChevronRight, LayoutDashboard, Shield, Tag, Map, Package2, Users2, FileText, Settings,
+  Sun, Moon
 } from 'lucide-react';
 import { LogoSidebar, LogoTopbar, APP_NAME, APP_SUBTITLE } from './Logo';
 
@@ -24,6 +26,7 @@ const navItems = [
 
 export default function Layout({ children, currentPage, onNavigate }: LayoutProps) {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const filteredNav = navItems.filter(
@@ -89,10 +92,24 @@ export default function Layout({ children, currentPage, onNavigate }: LayoutProp
           })}
         </nav>
 
+        {/* Theme toggle */}
+        <div className="px-3 pb-2">
+          <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white transition-all"
+          >
+            {theme === 'dark'
+              ? <><Sun className="w-4 h-4 flex-shrink-0 text-yellow-400" /><span>Modo claro</span></>
+              : <><Moon className="w-4 h-4 flex-shrink-0 text-blue-400" /><span>Modo oscuro</span></>
+            }
+          </button>
+        </div>
+
         {/* User info */}
         <div className="px-3 py-4 border-t border-gray-800">
           <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-800">
-            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold flex-shrink-0">
+            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold flex-shrink-0 !text-white" style={{ color: 'white' }}>
               {user?.full_name?.charAt(0).toUpperCase() || 'U'}
             </div>
             <div className="flex-1 min-w-0">
@@ -123,6 +140,10 @@ export default function Layout({ children, currentPage, onNavigate }: LayoutProp
             <LogoTopbar />
             <span className="font-bold text-white text-sm">{APP_NAME}</span>
           </div>
+          {/* Mobile theme toggle */}
+          <button onClick={toggleTheme} className="ml-auto text-gray-400 hover:text-white transition-colors">
+            {theme === 'dark' ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5 text-blue-400" />}
+          </button>
         </header>
 
         <main className="flex-1 overflow-y-auto bg-gray-950 p-4 md:p-6">
