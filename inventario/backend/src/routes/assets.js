@@ -8,7 +8,14 @@ const VALID_STATUSES = ['activo', 'inactivo', 'reparacion', 'baja'];
 router.get('/', authenticate, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT * FROM assets ORDER BY brand, model'
+      `SELECT a.*,
+        (SELECT cu.first_name || ' ' || cu.last_name
+         FROM asset_user_links aul
+         JOIN client_users cu ON cu.id = aul.client_user_id
+         WHERE aul.asset_id = a.id
+         ORDER BY aul.assigned_at DESC LIMIT 1) AS linked_user_name
+       FROM assets a
+       ORDER BY a.brand, a.model`
     );
     res.json(rows);
   } catch (err) {
