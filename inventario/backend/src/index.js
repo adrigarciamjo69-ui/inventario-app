@@ -56,6 +56,7 @@ async function initDB() {
         password_hash VARCHAR(255) NOT NULL,
         role VARCHAR(20) NOT NULL DEFAULT 'viewer' CHECK (role IN ('admin','editor','viewer')),
         active BOOLEAN NOT NULL DEFAULT true,
+        preferences JSONB NOT NULL DEFAULT '{}',
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
@@ -249,6 +250,11 @@ async function initDB() {
     }
 
     console.log('✅ Base de datos inicializada correctamente');
+
+    // Migraciones: añadir columnas nuevas si no existen
+    await client.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}';
+    `);
   } finally {
     client.release();
   }
