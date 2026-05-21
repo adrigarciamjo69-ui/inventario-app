@@ -175,6 +175,38 @@ async function initDB() {
         notes TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key VARCHAR(100) PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS delivery_records (
+        id SERIAL PRIMARY KEY,
+        doc_id VARCHAR(50) UNIQUE NOT NULL,
+        type VARCHAR(20) NOT NULL DEFAULT 'entrega' CHECK (type IN ('entrega','devolucion')),
+        client_user_id INTEGER REFERENCES client_users(id) ON DELETE SET NULL,
+        recipient_name VARCHAR(200),
+        recipient_dni VARCHAR(50),
+        delivery_date DATE NOT NULL,
+        responsible VARCHAR(150),
+        notes TEXT,
+        status VARCHAR(20) NOT NULL DEFAULT 'pendiente' CHECK (status IN ('pendiente','entregado','devuelto','cancelado')),
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS delivery_record_devices (
+        id SERIAL PRIMARY KEY,
+        delivery_record_id INTEGER NOT NULL REFERENCES delivery_records(id) ON DELETE CASCADE,
+        asset_id VARCHAR(50) REFERENCES assets(id) ON DELETE SET NULL,
+        device_type VARCHAR(100),
+        model VARCHAR(200),
+        serial_number VARCHAR(150),
+        observations TEXT
+      );
     `);
 
     // Create default admin if no users exist
