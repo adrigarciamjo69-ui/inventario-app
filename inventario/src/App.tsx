@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CategoriesProvider, useCategories } from './context/CategoriesContext';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import AssetsPage from './pages/AssetsPage';
@@ -63,25 +64,35 @@ function AppContent() {
   return <AuthenticatedApp />;
 }
 
+function ThemedToaster() {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+  return (
+    <Toaster
+      position="top-right"
+      toastOptions={{
+        style: {
+          background: isDark ? '#1f2937' : '#ffffff',
+          color: isDark ? '#f9fafb' : '#111827',
+          border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}`,
+          fontSize: '14px',
+        },
+        success: { iconTheme: { primary: '#22c55e', secondary: isDark ? '#fff' : '#fff' } },
+        error:   { iconTheme: { primary: '#ef4444', secondary: '#fff' } },
+      }}
+    />
+  );
+}
+
 export function App() {
   return (
-    <AuthProvider>
-      <CategoriesProvider>
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            style: {
-              background: '#1f2937',
-              color: '#f9fafb',
-              border: '1px solid #374151',
-              fontSize: '14px',
-            },
-            success: { iconTheme: { primary: '#22c55e', secondary: '#fff' } },
-            error:   { iconTheme: { primary: '#ef4444', secondary: '#fff' } },
-          }}
-        />
-        <AppContent />
-      </CategoriesProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <CategoriesProvider>
+          <ThemedToaster />
+          <AppContent />
+        </CategoriesProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
