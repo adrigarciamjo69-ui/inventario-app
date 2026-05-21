@@ -55,6 +55,7 @@ router.post('/login', async (req, res) => {
       email: user.email,
       role: user.role,
       active: user.active,
+      preferences: user.preferences || {},
     });
   } catch (err) {
     console.error('[LOGIN] Error:', err);
@@ -63,8 +64,35 @@ router.post('/login', async (req, res) => {
 });
 
 // GET /api/auth/me
-router.get('/me', authenticate, (req, res) => {
-  res.json(req.user);
+router.get('/me', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, username, full_name, email, role, active, preferences FROM users WHERE id = $1',
+      [req.user.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+    res.json({ ...rows[0], token: req.headers.authorization?.split(' ')[1] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// PATCH /api/auth/preferences
+router.patch('/preferences', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE users
+       SET preferences = preferences || $1::jsonb
+       WHERE id = $2
+       RETURNING preferences`,
+      [JSON.stringify(req.body), req.user.id]
+    );
+    res.json({ preferences: rows[0].preferences });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al guardar preferencias' });
+  }
 });
 
 module.exports = router;
