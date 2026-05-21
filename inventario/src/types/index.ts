@@ -131,6 +131,7 @@ export interface User {
   email: string;
   role: UserRole;
   active: boolean;
+  preferences: Record<string, unknown>;
   created_at?: string;
 }
 
