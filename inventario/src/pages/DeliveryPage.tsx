@@ -65,7 +65,7 @@ function hexToRgb(hex: string): [number, number, number] {
   return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
 }
 
-function generatePDF(record: Partial<DeliveryRecord> & { devices?: DeliveryDevice[] }, settings: AppSettings) {
+function generatePDF(record: Partial<DeliveryRecord> & { devices?: DeliveryDevice[] }, settings: AppSettings, categories: CategoryRaw[] = []) {
   const isE = record.type !== 'devolucion';
   const co = settings.company || {};
   const style = (isE ? settings.pdfStyle?.entrega : settings.pdfStyle?.devolucion) || {};
@@ -82,7 +82,8 @@ function generatePDF(record: Partial<DeliveryRecord> & { devices?: DeliveryDevic
   const apellido = parts.slice(0,half).join(' '); const nombre = parts.slice(half).join(' ') || apellido;
   const full = apellido+(nombre && nombre!==apellido?', '+nombre:'');
   const docId = record.doc_id || 'BORRADOR';
-  const fechaStr = record.delivery_date ? new Date(record.delivery_date+'T12:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'}) : 'XX/XX/XXXX';
+  const dateStr = record.delivery_date ? record.delivery_date.toString().slice(0, 10) : null;
+  const fechaStr = dateStr ? new Date(dateStr+'T12:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'}) : 'XX/XX/XXXX';
   const rawClauses = isE ? (settings.clauses?.entrega||DEFAULT_CLAUSES_E) : (settings.clauses?.devolucion||DEFAULT_CLAUSES_D);
   const clauses = rawClauses.map(c=>c.replace(/\{empresa\}/g,cEmp).replace(/\{trabajador\}/g,full).replace(/\{ciudad\}/g,cCity));
   const doc = new jsPDF({unit:'mm',format:'a4'});
@@ -107,7 +108,10 @@ function generatePDF(record: Partial<DeliveryRecord> & { devices?: DeliveryDevic
   let cx=mL;tHeaders.forEach((h,i)=>{doc.text(h,cx+3,y+5.8);cx+=tCW[i];});
   let tableY=y+rowH;
   devices.forEach((dev,ri)=>{
-    const row=[dev.device_type||'',dev.model||'',dev.serial_number||'',dev.observations||''];
+    const row=[
+      (() => { const cat = categories.find(c=>c.value===dev.device_type); const lbl = cat?.label || dev.device_type || ''; return lbl.charAt(0).toUpperCase()+lbl.slice(1); })(),
+      dev.model||'',dev.serial_number||'',dev.observations||''
+    ];
     const wrapped=row.map((cell,ci)=>doc.splitTextToSize(cell,tCW[ci]-5));
     const maxLines=Math.max(...wrapped.map(w=>w.length));const rH=Math.max(rowH,maxLines*4.8+4);
     doc.setFillColor(...(ri%2===0?LBLUE.map(c=>Math.round(c+(255-c)*0.7)) as [number,number,number]:[255,255,255]));
@@ -555,7 +559,7 @@ function CreateModal({ onClose, onCreated, records, settings }: {
     catch(err:any){toast.error(err?.response?.data?.error||'Error al crear el acta');}finally{setSaving(false);}
   };
 
-  const previewPDF=()=>generatePDF({type,doc_id:'BORRADOR',recipient_name:selectedUser?`${selectedUser.first_name} ${selectedUser.last_name}`:userSearch||'—',recipient_dni:dni,responsible,delivery_date:deliveryDate,devices:devices.filter(d=>d.serial_number||d.model)},settings);
+  const previewPDF=()=>generatePDF({type,doc_id:'BORRADOR',recipient_name:selectedUser?`${selectedUser.first_name} ${selectedUser.last_name}`:userSearch||'—',recipient_dni:dni,responsible,delivery_date:deliveryDate,devices:devices.filter(d=>d.serial_number||d.model)},settings,allCategories);
 
   const inp="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500";
   const lbl="block text-xs font-medium text-gray-400 mb-1.5";
@@ -696,8 +700,8 @@ function CreateModal({ onClose, onCreated, records, settings }: {
 
 // ── DetailModal ───────────────────────────────────────────────────────────────
 
-function DetailModal({ record, onClose, onUpdated, onDelete, settings }: {
-  record: DeliveryRecord; onClose: () => void; onUpdated: () => void; onDelete: () => void; settings: AppSettings;
+function DetailModal({ record, onClose, onUpdated, onDelete, settings, categories }: {
+  record: DeliveryRecord; onClose: () => void; onUpdated: () => void; onDelete: () => void; settings: AppSettings; categories: CategoryRaw[];
 }) {
   const { user } = useAuth();
   const [confirmDelete, setConfirmDelete] = useState(false); const [deleting, setDeleting] = useState(false);
@@ -713,7 +717,7 @@ function DetailModal({ record, onClose, onUpdated, onDelete, settings }: {
             <span className={`text-xs px-2 py-0.5 rounded font-medium ${record.type==='entrega'?'bg-blue-600/20 text-blue-400':'bg-purple-600/20 text-purple-400'}`}>{record.type==='entrega'?'📤 Entrega':'📥 Devolución'}</span>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={()=>generatePDF(record,settings)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-600 rounded-lg transition-colors">
+            <button onClick={()=>generatePDF(record,settings,categories)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-600 rounded-lg transition-colors">
               <Download className="w-3.5 h-3.5"/> Descargar PDF
             </button>
             <button onClick={onClose} className="text-gray-500 hover:text-white"><X className="w-5 h-5"/></button>
@@ -764,12 +768,13 @@ export default function DeliveryPage() {
   const [search, setSearch] = useState(''); const [filterType, setFilterType] = useState(''); const [filterStatus, setFilterStatus] = useState('');
   const [showCreate, setShowCreate] = useState(false); const [selected, setSelected] = useState<DeliveryRecord|null>(null);
   const [settings, setSettings] = useState<AppSettings>({});
+  const [categories, setCategories] = useState<CategoryRaw[]>([]);
   const [showBulkDelete, setShowBulkDelete] = useState(false);
   const canEdit = user?.role==='admin'||user?.role==='editor';
 
   const load=useCallback(()=>{
     setLoading(true);
-    Promise.all([apiClient.get('/deliveries'),apiClient.get('/settings')]).then(([recs,sets])=>{setRecords(recs.data);setSettings(sets.data);}).catch(()=>{}).finally(()=>setLoading(false));
+    Promise.all([apiClient.get('/deliveries'),apiClient.get('/settings'),apiClient.get('/categories')]).then(([recs,sets,cats])=>{setRecords(recs.data);setSettings(sets.data);setCategories(cats.data);}).catch(()=>{}).finally(()=>setLoading(false));
   },[]);
 
   useEffect(()=>{load();},[load]);
@@ -854,7 +859,7 @@ export default function DeliveryPage() {
                     <td className="px-4 py-3 text-gray-300">{new Date(r.delivery_date).toLocaleDateString('es-ES')}</td>
                     <td className="px-4 py-3 text-gray-300">{r.devices?.length?`${r.devices.length} dispositivo${r.devices.length!==1?'s':''}`:<span className="text-gray-600">—</span>}</td>
                     <td className="px-4 py-3">{canEdit?<InlineStatus record={r} onUpdated={load}/>:<StatusBadge status={r.status}/>}</td>
-                    <td className="px-4 py-3"><button onClick={()=>generatePDF(r,settings)} title="Descargar PDF" className="text-gray-600 hover:text-blue-400 transition-colors p-1"><Download className="w-4 h-4"/></button></td>
+                    <td className="px-4 py-3"><button onClick={()=>generatePDF(r,settings,categories)} title="Descargar PDF" className="text-gray-600 hover:text-blue-400 transition-colors p-1"><Download className="w-4 h-4"/></button></td>
                   </tr>
                 );
               })}
@@ -864,7 +869,7 @@ export default function DeliveryPage() {
       </div>
 
       {showCreate&&<CreateModal onClose={()=>setShowCreate(false)} onCreated={load} records={records} settings={settings}/>}
-      {selected&&<DetailModal record={selected} onClose={()=>setSelected(null)} onUpdated={load} onDelete={()=>{setSelected(null);load();}} settings={settings}/>}
+      {selected&&<DetailModal record={selected} onClose={()=>setSelected(null)} onUpdated={load} onDelete={()=>{setSelected(null);load();}} settings={settings} categories={categories}/>}
       {showBulkDelete&&<BulkDeleteModal records={filtered.length>0?filtered:records} onClose={()=>setShowBulkDelete(false)} onDeleted={load}/>}
     </div>
   );
