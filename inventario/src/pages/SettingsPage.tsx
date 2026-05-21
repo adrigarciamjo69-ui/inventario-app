@@ -2,7 +2,8 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import {
   Building2, FileText, RotateCcw, Save, Plus, Trash2,
   Upload, X, Settings, Palette, AlignLeft, ChevronRight,
-  Tag, Users, HardDrive, Database, AlertTriangle, RefreshCw
+  Tag, Users, HardDrive, Database, AlertTriangle, RefreshCw,
+  ExternalLink, Link2, Globe
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../api/client';
@@ -20,11 +21,14 @@ interface PdfStyle {
   primary: string; accent: string; footer: string; fontSize: number;
 }
 
+interface QuickLink { label: string; url: string; icon: string }
+
 interface AppSettings {
   company: CompanySettings;
   responsables: string[];
   pdfStyle: { entrega: PdfStyle; devolucion: PdfStyle };
   clauses: { entrega: string[]; devolucion: string[] };
+  quickLinks: QuickLink[];
 }
 
 interface DiskInfo { total: number; used: number; available: number; pct_used: number }
@@ -388,7 +392,7 @@ function StoragePanel() {
 
 // ── Main SettingsPage ─────────────────────────────────────────────────────────
 
-type Section = 'empresa' | 'entrega' | 'devolucion' | 'categories' | 'users' | 'storage';
+type Section = 'empresa' | 'entrega' | 'devolucion' | 'categories' | 'users' | 'storage' | 'quicklinks';
 type DocTab = 'pdf' | 'clausulas';
 
 export default function SettingsPage() {
@@ -402,6 +406,7 @@ export default function SettingsPage() {
   const [newResp, setNewResp] = useState('');
   const [pdfStyle, setPdfStyle] = useState({ entrega: DEFAULT_PDF_STYLE, devolucion: DEFAULT_PDF_STYLE_DEV });
   const [clauses, setClauses] = useState({ entrega: DEFAULT_CLAUSES_ENTREGA, devolucion: DEFAULT_CLAUSES_DEVOLUCION });
+  const [quickLinks, setQuickLinks] = useState<QuickLink[]>([]);
 
   const logoInputRef = useRef<HTMLInputElement>(null);
 
@@ -414,6 +419,7 @@ export default function SettingsPage() {
       if (s.responsables) setResponsables(s.responsables);
       if (s.pdfStyle)     setPdfStyle(p => ({ entrega: { ...DEFAULT_PDF_STYLE, ...s.pdfStyle?.entrega }, devolucion: { ...DEFAULT_PDF_STYLE_DEV, ...s.pdfStyle?.devolucion } }));
       if (s.clauses)      setClauses(c => ({ entrega: s.clauses?.entrega || DEFAULT_CLAUSES_ENTREGA, devolucion: s.clauses?.devolucion || DEFAULT_CLAUSES_DEVOLUCION }));
+      if (s.quickLinks)   setQuickLinks(s.quickLinks);
     } catch { /* first time, use defaults */ }
     finally { setLoading(false); }
   }, []);
@@ -423,7 +429,7 @@ export default function SettingsPage() {
   const save = async () => {
     setSaving(true);
     try {
-      await apiClient.post('/settings', { company, responsables, pdfStyle, clauses });
+      await apiClient.post('/settings', { company, responsables, pdfStyle, clauses, quickLinks });
       toast.success('Configuración guardada correctamente');
     } catch { toast.error('Error al guardar'); }
     finally { setSaving(false); }
@@ -448,8 +454,9 @@ export default function SettingsPage() {
     { id: 'empresa',    label: 'Empresa',      icon: <Building2 className="w-4 h-4" /> },
     { id: 'entrega',    label: 'Entrega',      icon: <FileText className="w-4 h-4" /> },
     { id: 'devolucion', label: 'Devolución',   icon: <RotateCcw className="w-4 h-4" /> },
-    { id: 'categories', label: 'Categorías',   icon: <Tag className="w-4 h-4" />, separator: true },
-    { id: 'users',      label: 'Usuarios App', icon: <Users className="w-4 h-4" /> },
+    { id: 'categories', label: 'Categorías',     icon: <Tag className="w-4 h-4" />, separator: true },
+    { id: 'users',      label: 'Usuarios App',   icon: <Users className="w-4 h-4" /> },
+    { id: 'quicklinks', label: 'Accesos rápidos', icon: <ExternalLink className="w-4 h-4" /> },
     { id: 'storage',    label: 'Almacenamiento', icon: <HardDrive className="w-4 h-4" />, separator: true },
   ];
 
@@ -638,6 +645,90 @@ export default function SettingsPage() {
                   />
                 )}
               </div>
+            </div>
+          )}
+
+          {/* ── ACCESOS RÁPIDOS ── */}
+          {section === 'quicklinks' && (
+            <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-4">
+              <div>
+                <h3 className="text-base font-semibold text-white flex items-center gap-2 mb-1">
+                  <ExternalLink className="w-4 h-4 text-blue-400" /> Accesos rápidos
+                </h3>
+                <p className="text-xs text-gray-500">Aparecen en la barra lateral izquierda para acceder rápidamente a webs externas.</p>
+              </div>
+
+              <div className="space-y-3">
+                {quickLinks.map((link, i) => (
+                  <div key={i} className="flex gap-2 items-start p-3 bg-gray-800/50 border border-gray-700/50 rounded-lg">
+                    <div className="flex-1 grid grid-cols-3 gap-2">
+                      <div>
+                        <label className={lbl}>Icono</label>
+                        <select
+                          className={inp}
+                          value={link.icon}
+                          onChange={e => setQuickLinks(ql => ql.map((l, idx) => idx === i ? { ...l, icon: e.target.value } : l))}
+                        >
+                          <option value="globe">🌐 Web</option>
+                          <option value="link">🔗 Enlace</option>
+                          <option value="external">↗ Externo</option>
+                          <option value="monitor">🖥 Monitor</option>
+                          <option value="tool">🔧 Herramienta</option>
+                          <option value="chart">📊 Dashboard</option>
+                          <option value="shield">🛡 Seguridad</option>
+                          <option value="cloud">☁ Cloud</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className={lbl}>Nombre</label>
+                        <input
+                          className={inp}
+                          placeholder="Mi portal"
+                          value={link.label}
+                          onChange={e => setQuickLinks(ql => ql.map((l, idx) => idx === i ? { ...l, label: e.target.value } : l))}
+                        />
+                      </div>
+                      <div>
+                        <label className={lbl}>URL</label>
+                        <input
+                          className={inp}
+                          placeholder="https://..."
+                          value={link.url}
+                          onChange={e => setQuickLinks(ql => ql.map((l, idx) => idx === i ? { ...l, url: e.target.value } : l))}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setQuickLinks(ql => ql.filter((_, idx) => idx !== i))}
+                      className="text-gray-600 hover:text-red-400 transition-colors mt-6 flex-shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setQuickLinks(ql => [...ql, { label: '', url: '', icon: 'globe' }])}
+                className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> Añadir acceso rápido
+              </button>
+
+              {quickLinks.length > 0 && (
+                <div className="mt-2 pt-4 border-t border-gray-800">
+                  <p className="text-xs text-gray-500 mb-3">Vista previa en la barra lateral:</p>
+                  <div className="bg-gray-800 rounded-lg p-3 space-y-1 w-48">
+                    {quickLinks.filter(l => l.label).map((link, i) => (
+                      <div key={i} className="flex items-center gap-2 px-2 py-1.5 rounded text-xs text-gray-400">
+                        <Globe className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                        <span className="truncate">{link.label}</span>
+                        <ExternalLink className="w-3 h-3 ml-auto opacity-50 flex-shrink-0" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
