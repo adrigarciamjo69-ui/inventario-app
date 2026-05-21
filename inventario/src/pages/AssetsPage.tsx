@@ -499,7 +499,7 @@ export default function AssetsPage() {
                         {a.purchase_date ? new Date(a.purchase_date).toLocaleDateString('es-ES') : '—'}
                       </td>
                       <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{a.purchase_order || '—'}</td>
-                      <td className="px-4 py-3 text-gray-300 whitespace-nowrap text-xs">{a.assigned_to || '—'}</td>
+                      <td className="px-4 py-3 text-gray-300 whitespace-nowrap text-xs">{(a as any).linked_user_name || a.assigned_to || '—'}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${statusColors[a.status] || ''}`}>
                           {statusLabels[a.status] || a.status}
