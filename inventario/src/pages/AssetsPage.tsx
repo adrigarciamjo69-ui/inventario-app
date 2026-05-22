@@ -468,6 +468,7 @@ export default function AssetsPage() {
                       <div className="flex items-center gap-1">{label}<SortIcon field={field} /></div>
                     </th>
                   ))}
+                  <th className="px-4 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">Departamento</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-400">Acciones</th>
                 </tr>
               </thead>
@@ -505,6 +506,7 @@ export default function AssetsPage() {
                           {statusLabels[a.status] || a.status}
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-gray-400 whitespace-nowrap text-xs">{a.department || '—'}</td>
                       <td className="px-4 py-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-2">
                           <button onClick={() => { setEditAsset(a); setShowForm(true); }}
