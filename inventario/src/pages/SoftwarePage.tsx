@@ -47,6 +47,7 @@ const emptyForm = {
   license_key: '', license_type: 'perpetua' as SoftwareLicenseType,
   seats: 1, purchase_date: '', expiry_date: '',
   purchase_order: '', price: 0,
+  department: '',
   status: 'activo' as SoftwareStatus, notes: '',
 };
 
@@ -357,6 +358,7 @@ function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: Softw
         expiry_date: software.expiry_date?.slice(0, 10) || '',
         purchase_order: software.purchase_order || '',
         price: software.price, status: software.status, notes: software.notes || '',
+        department: (software as any).department || '',
       });
       if (isEdit) {
         setLoadingDetail(true);
@@ -461,8 +463,13 @@ function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: Softw
                     className={ic() + ' pl-9'} />
                 </div>
               </Field>
+              <Field label="Departamento">
+                <input type="text" value={(form as any).department || ''}
+                  onChange={e => setForm(f => ({ ...f, department: e.target.value }))}
+                  placeholder="Ej: TI, RRHH, Contabilidad..." className={ic()} />
+              </Field>
               <div className="sm:col-span-2">
-                <Field label="Notas">
+              <Field label="Notas">
                   <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                     rows={3} placeholder="Observaciones adicionales..." className={ic() + ' resize-none'} />
                 </Field>
