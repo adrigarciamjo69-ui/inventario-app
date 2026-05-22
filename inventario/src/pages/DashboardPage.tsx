@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Package, Activity, TrendingUp, AlertCircle, AlertTriangle,
   CheckCircle, User, Loader2, Package2, Globe, Building2,
-  Monitor, RefreshCw, Clock, ShieldAlert
+  Monitor, RefreshCw, Clock, ShieldAlert, ExternalLink
 } from 'lucide-react';
 import { getAssets, apiClient } from '../api/client';
 import { Asset, Software, Service } from '../types';
@@ -459,12 +459,16 @@ function HardwareView({ assets }: { assets: Asset[] }) {
 // ── View: Software ────────────────────────────────────────────────────────────
 
 function SoftwareView({ software }: { software: Software[] }) {
-  const totalValue   = software.reduce((a,x)=>a+Number(x.price||0),0);
-  const totalSeats   = software.reduce((a,x)=>a+Number(x.seats||0),0);
-  const byStatus     = software.reduce<Record<string,number>>((a,x)=>{a[x.status]=(a[x.status]||0)+1;return a;},{});
-  const byType       = software.reduce<Record<string,number>>((a,x)=>{a[x.license_type]=(a[x.license_type]||0)+1;return a;},{});
+  const [activeDept, setActiveDept] = useState<string | null>(null);
+
+  const filtered = activeDept ? software.filter(s => (s as any).department === activeDept) : software;
+
+  const totalValue   = filtered.reduce((a,x)=>a+Number(x.price||0),0);
+  const totalSeats   = filtered.reduce((a,x)=>a+Number(x.seats||0),0);
+  const byStatus     = filtered.reduce<Record<string,number>>((a,x)=>{a[x.status]=(a[x.status]||0)+1;return a;},{});
+  const byType       = filtered.reduce<Record<string,number>>((a,x)=>{a[x.license_type]=(a[x.license_type]||0)+1;return a;},{});
   const byDept       = software.reduce<Record<string,number>>((a,x)=>{ const d=(x as any).department; if(d){a[d]=(a[d]||0)+1;} return a; },{});
-  const expiringSoon = software.filter(s=>{ if(!s.expiry_date)return false; const d=Math.ceil((new Date(s.expiry_date).getTime()-Date.now())/86400000); return d>=0&&d<=30; });
+  const expiringSoon = filtered.filter(s=>{ if(!s.expiry_date)return false; const d=Math.ceil((new Date(s.expiry_date).getTime()-Date.now())/86400000); return d>=0&&d<=30; });
 
   const licenseLabels: Record<string,string> = {
     perpetua:'Perpetua', suscripcion:'Suscripción', freeware:'Freeware',
@@ -473,8 +477,21 @@ function SoftwareView({ software }: { software: Software[] }) {
 
   return (
     <div className="space-y-6">
+
+      {/* Filter pill */}
+      {activeDept && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400">Filtrando por:</span>
+          <span className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-600/20 border border-purple-500/40 rounded-full text-xs text-purple-300 font-medium">
+            {activeDept}
+            <button onClick={()=>setActiveDept(null)} className="ml-1 hover:text-white transition-colors">✕</button>
+          </span>
+        </div>
+      )}
+
+      {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total Software" value={software.length}
+        <StatCard title={activeDept ? `Software — ${activeDept}` : 'Total Software'} value={filtered.length}
           icon={<Package2 className="w-5 h-5 text-purple-400" />}
           gradient="from-purple-600/20 to-purple-900/10" border="border-purple-500/20" />
         <StatCard title="Activos" value={byStatus['activo']||0}
@@ -485,6 +502,7 @@ function SoftwareView({ software }: { software: Software[] }) {
           gradient="from-blue-600/20 to-blue-900/10" border="border-blue-500/20" />
         <StatCard title="Inversión total"
           value={`${totalValue.toLocaleString('es-ES',{minimumFractionDigits:2})} €`}
+          sub={activeDept ? `solo ${activeDept}` : undefined}
           icon={<TrendingUp className="w-5 h-5 text-cyan-400" />}
           gradient="from-cyan-600/20 to-cyan-900/10" border="border-cyan-500/20" />
       </div>
@@ -501,27 +519,85 @@ function SoftwareView({ software }: { software: Software[] }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-purple-400"/>Por estado</h3>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-purple-400"/>Por estado {activeDept && <span className="text-xs text-gray-500 font-normal">({activeDept})</span>}</h3>
           <StatusGrid byStatus={byStatus} colors={swStatusColors} labels={swStatusLabels} />
         </div>
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><Package2 className="w-4 h-4 text-blue-400"/>Por tipo de licencia</h3>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><Package2 className="w-4 h-4 text-blue-400"/>Por tipo de licencia {activeDept && <span className="text-xs text-gray-500 font-normal">({activeDept})</span>}</h3>
           <div className="space-y-2.5">
             {Object.entries(byType).sort(([,a],[,b])=>b-a).map(([t,c])=>(
-              <BarRow key={t} label={licenseLabels[t]||t} count={c} total={software.length} color="bg-purple-500" />
+              <BarRow key={t} label={licenseLabels[t]||t} count={c} total={filtered.length} color="bg-purple-500" />
             ))}
             {!Object.keys(byType).length && <p className="text-gray-500 text-sm text-center py-4">Sin datos</p>}
           </div>
         </div>
+
+        {/* Departamentos — clickables */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><Building2 className="w-4 h-4 text-cyan-400"/>Por departamento</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2"><Building2 className="w-4 h-4 text-cyan-400"/>Por departamento</h3>
+            {activeDept && <button onClick={()=>setActiveDept(null)} className="text-xs text-gray-500 hover:text-white transition-colors">Limpiar</button>}
+          </div>
           <div className="space-y-2.5">
             {Object.entries(byDept).sort(([,a],[,b])=>b-a).map(([d,c])=>(
-              <BarRow key={d} label={d} count={c} total={software.length} color="bg-cyan-500" />
+              <button key={d} onClick={()=>setActiveDept(p=>p===d?null:d)}
+                className={`w-full flex items-center gap-3 rounded-lg px-2 py-1 transition-colors text-left ${activeDept===d ? 'bg-purple-600/20 ring-1 ring-purple-500/40' : 'hover:bg-gray-800/60'}`}>
+                <span className={`text-sm flex-1 ${activeDept===d ? 'text-purple-300 font-medium' : 'text-gray-300'}`}>{d}</span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${activeDept===d ? 'bg-purple-400' : 'bg-cyan-500'}`}
+                      style={{ width: `${(c/Object.values(byDept).reduce((a,b)=>a+b,0))*100}%` }} />
+                  </div>
+                  <span className={`text-sm font-medium w-6 text-right ${activeDept===d ? 'text-purple-300' : 'text-white'}`}>{c}</span>
+                </div>
+              </button>
             ))}
             {!Object.keys(byDept).length && <p className="text-gray-500 text-sm text-center py-4">Sin departamentos asignados</p>}
           </div>
         </div>
+      </div>
+
+      {/* Tabla de software filtrado */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+          <Package2 className="w-4 h-4 text-gray-400"/>
+          {activeDept ? `Software — ${activeDept}` : 'Todo el software'}
+          <span className="ml-auto text-xs text-gray-500 font-normal">{filtered.length} resultado(s)</span>
+        </h3>
+        {filtered.length === 0 ? <p className="text-gray-500 text-sm text-center py-6">Sin software para este departamento</p> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-gray-800">
+                {['Nombre','Proveedor','Tipo','Puestos','Expiración','Estado'].map(h=>(
+                  <th key={h} className="text-left text-gray-500 font-medium pb-2 pr-4 text-xs">{h}</th>
+                ))}
+              </tr></thead>
+              <tbody className="divide-y divide-gray-800">
+                {filtered.slice(0,10).map(s=>(
+                  <tr key={s.id} className="hover:bg-gray-800/50 transition-colors">
+                    <td className="py-2.5 pr-4 text-white font-medium">{s.name}</td>
+                    <td className="py-2.5 pr-4 text-gray-400 text-xs">{s.vendor}</td>
+                    <td className="py-2.5 pr-4 text-gray-400 text-xs">{licenseLabels[s.license_type]||s.license_type}</td>
+                    <td className="py-2.5 pr-4 text-gray-400 text-xs">{s.seats}</td>
+                    <td className="py-2.5 pr-4 text-xs">
+                      {s.expiry_date ? (
+                        <span className={Math.ceil((new Date(s.expiry_date).getTime()-Date.now())/86400000)<=30 ? 'text-yellow-400 font-medium' : 'text-gray-400'}>
+                          {new Date(s.expiry_date+'T12:00:00').toLocaleDateString('es-ES')}
+                        </span>
+                      ) : <span className="text-gray-600">—</span>}
+                    </td>
+                    <td className="py-2.5">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${swStatusColors[s.status]||''}`}>
+                        {swStatusLabels[s.status]||s.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filtered.length > 10 && <p className="text-xs text-gray-500 mt-3">Mostrando 10 de {filtered.length}</p>}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -530,16 +606,34 @@ function SoftwareView({ software }: { software: Software[] }) {
 // ── View: Services ────────────────────────────────────────────────────────────
 
 function ServicesView({ services }: { services: Service[] }) {
-  const byStatus   = services.reduce<Record<string,number>>((a,x)=>{a[x.status]=(a[x.status]||0)+1;return a;},{});
-  const byCategory = services.reduce<Record<string,number>>((a,x)=>{a[x.category]=(a[x.category]||0)+1;return a;},{});
+  const [activeDept, setActiveDept] = useState<string | null>(null);
+
+  const filtered   = activeDept ? services.filter(s => s.department === activeDept) : services;
+  const byStatus   = filtered.reduce<Record<string,number>>((a,x)=>{a[x.status]=(a[x.status]||0)+1;return a;},{});
+  const byCategory = filtered.reduce<Record<string,number>>((a,x)=>{a[x.category]=(a[x.category]||0)+1;return a;},{});
   const byDept     = services.reduce<Record<string,number>>((a,x)=>{ if(x.department){a[x.department]=(a[x.department]||0)+1;} return a; },{});
-  const monthly    = services.reduce((a,s)=>a+(s.billing_cycle==='mensual'?Number(s.cost):s.billing_cycle==='anual'?Number(s.cost)/12:0),0);
-  const renewing   = services.filter(s=>{ if(!s.renewal_date)return false; const d=Math.ceil((new Date(s.renewal_date).getTime()-Date.now())/86400000); return d>=0&&d<=30; });
+  const monthly    = filtered.reduce((a,s)=>a+(s.billing_cycle==='mensual'?Number(s.cost):s.billing_cycle==='anual'?Number(s.cost)/12:0),0);
+  const renewing   = filtered.filter(s=>{ if(!s.renewal_date)return false; const d=Math.ceil((new Date(s.renewal_date).getTime()-Date.now())/86400000); return d>=0&&d<=30; });
+
+  const billingLabels: Record<string,string> = { mensual:'Mensual', anual:'Anual', unico:'Pago único', gratuito:'Gratuito' };
 
   return (
     <div className="space-y-6">
+
+      {/* Filter pill */}
+      {activeDept && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400">Filtrando por:</span>
+          <span className="flex items-center gap-1.5 px-2.5 py-1 bg-cyan-600/20 border border-cyan-500/40 rounded-full text-xs text-cyan-300 font-medium">
+            {activeDept}
+            <button onClick={()=>setActiveDept(null)} className="ml-1 hover:text-white transition-colors">✕</button>
+          </span>
+        </div>
+      )}
+
+      {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total Servicios" value={services.length}
+        <StatCard title={activeDept ? `Servicios — ${activeDept}` : 'Total Servicios'} value={filtered.length}
           icon={<Globe className="w-5 h-5 text-cyan-400" />}
           gradient="from-cyan-600/20 to-cyan-900/10" border="border-cyan-500/20" />
         <StatCard title="Activos" value={byStatus['activo']||0}
@@ -550,6 +644,7 @@ function ServicesView({ services }: { services: Service[] }) {
           gradient="from-yellow-600/20 to-yellow-900/10" border="border-yellow-500/20" />
         <StatCard title="Coste mensual"
           value={`${monthly.toLocaleString('es-ES',{minimumFractionDigits:2})} €`}
+          sub={activeDept ? `solo ${activeDept}` : undefined}
           icon={<TrendingUp className="w-5 h-5 text-purple-400" />}
           gradient="from-purple-600/20 to-purple-900/10" border="border-purple-500/20" />
       </div>
@@ -566,27 +661,94 @@ function ServicesView({ services }: { services: Service[] }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-cyan-400"/>Por estado</h3>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-cyan-400"/>Por estado {activeDept && <span className="text-xs text-gray-500 font-normal">({activeDept})</span>}</h3>
           <StatusGrid byStatus={byStatus} colors={svcStatusColors} labels={svcStatusLabels} />
         </div>
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><Globe className="w-4 h-4 text-blue-400"/>Por categoría</h3>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><Globe className="w-4 h-4 text-blue-400"/>Por categoría {activeDept && <span className="text-xs text-gray-500 font-normal">({activeDept})</span>}</h3>
           <div className="space-y-2.5">
             {Object.entries(byCategory).sort(([,a],[,b])=>b-a).map(([c,n])=>(
-              <BarRow key={c} label={c} count={n} total={services.length} color="bg-cyan-500" />
+              <BarRow key={c} label={c} count={n} total={filtered.length} color="bg-cyan-500" />
             ))}
             {!Object.keys(byCategory).length && <p className="text-gray-500 text-sm text-center py-4">Sin datos</p>}
           </div>
         </div>
+
+        {/* Departamentos — clickables */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><Building2 className="w-4 h-4 text-green-400"/>Por departamento</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2"><Building2 className="w-4 h-4 text-green-400"/>Por departamento</h3>
+            {activeDept && <button onClick={()=>setActiveDept(null)} className="text-xs text-gray-500 hover:text-white transition-colors">Limpiar</button>}
+          </div>
           <div className="space-y-2.5">
             {Object.entries(byDept).sort(([,a],[,b])=>b-a).map(([d,c])=>(
-              <BarRow key={d} label={d} count={c} total={services.length} color="bg-green-500" />
+              <button key={d} onClick={()=>setActiveDept(p=>p===d?null:d)}
+                className={`w-full flex items-center gap-3 rounded-lg px-2 py-1 transition-colors text-left ${activeDept===d ? 'bg-cyan-600/20 ring-1 ring-cyan-500/40' : 'hover:bg-gray-800/60'}`}>
+                <span className={`text-sm flex-1 ${activeDept===d ? 'text-cyan-300 font-medium' : 'text-gray-300'}`}>{d}</span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${activeDept===d ? 'bg-cyan-400' : 'bg-green-500'}`}
+                      style={{ width: `${(c/Object.values(byDept).reduce((a,b)=>a+b,0))*100}%` }} />
+                  </div>
+                  <span className={`text-sm font-medium w-6 text-right ${activeDept===d ? 'text-cyan-300' : 'text-white'}`}>{c}</span>
+                </div>
+              </button>
             ))}
             {!Object.keys(byDept).length && <p className="text-gray-500 text-sm text-center py-4">Sin departamentos asignados</p>}
           </div>
         </div>
+      </div>
+
+      {/* Tabla de servicios filtrados */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+          <Globe className="w-4 h-4 text-gray-400"/>
+          {activeDept ? `Servicios — ${activeDept}` : 'Todos los servicios'}
+          <span className="ml-auto text-xs text-gray-500 font-normal">{filtered.length} resultado(s)</span>
+        </h3>
+        {filtered.length === 0 ? <p className="text-gray-500 text-sm text-center py-6">Sin servicios para este departamento</p> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-gray-800">
+                {['Nombre','Proveedor','Categoría','Coste','Ciclo','Renovación','Estado'].map(h=>(
+                  <th key={h} className="text-left text-gray-500 font-medium pb-2 pr-4 text-xs">{h}</th>
+                ))}
+              </tr></thead>
+              <tbody className="divide-y divide-gray-800">
+                {filtered.slice(0,10).map(s=>(
+                  <tr key={s.id} className="hover:bg-gray-800/50 transition-colors">
+                    <td className="py-2.5 pr-4 text-white font-medium">
+                      {s.url
+                        ? <a href={s.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-blue-400 transition-colors">
+                            {s.name}<ExternalLink className="w-3 h-3 opacity-50"/>
+                          </a>
+                        : s.name}
+                    </td>
+                    <td className="py-2.5 pr-4 text-gray-400 text-xs">{s.provider||'—'}</td>
+                    <td className="py-2.5 pr-4 text-xs"><span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-300">{s.category}</span></td>
+                    <td className="py-2.5 pr-4 text-gray-300 text-xs font-mono">
+                      {s.billing_cycle!=='gratuito' ? `${Number(s.cost).toLocaleString('es-ES',{minimumFractionDigits:2})} €` : '—'}
+                    </td>
+                    <td className="py-2.5 pr-4 text-gray-400 text-xs">{billingLabels[s.billing_cycle]||s.billing_cycle}</td>
+                    <td className="py-2.5 pr-4 text-xs">
+                      {s.renewal_date
+                        ? <span className={Math.ceil((new Date(s.renewal_date).getTime()-Date.now())/86400000)<=30 ? 'text-yellow-400 font-medium' : 'text-gray-400'}>
+                            {new Date(s.renewal_date+'T12:00:00').toLocaleDateString('es-ES')}
+                          </span>
+                        : <span className="text-gray-600">—</span>}
+                    </td>
+                    <td className="py-2.5">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${svcStatusColors[s.status]||''}`}>
+                        {svcStatusLabels[s.status]||s.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filtered.length > 10 && <p className="text-xs text-gray-500 mt-3">Mostrando 10 de {filtered.length}</p>}
+          </div>
+        )}
       </div>
     </div>
   );
