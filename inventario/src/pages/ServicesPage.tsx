@@ -275,7 +275,6 @@ export default function ServicesPage() {
           { label: 'Total', value: services.length, color: 'text-blue-400' },
           { label: 'Activos', value: services.filter(s => s.status === 'activo').length, color: 'text-green-400' },
           { label: 'Renovación prox.', value: soonRenewal.length, color: 'text-yellow-400' },
-          { label: 'Coste mensual', value: `${totalCost.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €`, color: 'text-purple-400' },
         ].map(s => (
           <div key={s.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <p className="text-xs text-gray-500 mb-1">{s.label}</p>
