@@ -41,7 +41,7 @@ router.get('/:id', authenticate, async (req, res) => {
 
 // POST /api/assets
 router.post('/', authenticate, requireEditor, async (req, res) => {
-  const { id, serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, status, notes } = req.body;
+  const { id, serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, department, status, notes } = req.body;
   if (!id || !serial_number || !brand || !model) {
     return res.status(400).json({ error: 'ID interno, número de serie, marca y modelo son requeridos' });
   }
@@ -50,8 +50,8 @@ router.post('/', authenticate, requireEditor, async (req, res) => {
   }
   try {
     const { rows } = await pool.query(
-      `INSERT INTO assets (id, serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, status, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      `INSERT INTO assets (id, serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, department, status, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING *`,
       [
         id.trim(),
@@ -63,6 +63,7 @@ router.post('/', authenticate, requireEditor, async (req, res) => {
         purchase_date || null,
         purchase_order?.trim() || null,
         assigned_to?.trim() || null,
+        department?.trim() || null,
         status || 'activo',
         notes?.trim() || null
       ]
@@ -82,7 +83,7 @@ router.post('/', authenticate, requireEditor, async (req, res) => {
 
 // PUT /api/assets/:id
 router.put('/:id', authenticate, requireEditor, async (req, res) => {
-  const { serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, status, notes } = req.body;
+  const { serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, department, status, notes } = req.body;
   if (!serial_number || !brand || !model) {
     return res.status(400).json({ error: 'Número de serie, marca y modelo son requeridos' });
   }
@@ -91,15 +92,17 @@ router.put('/:id', authenticate, requireEditor, async (req, res) => {
       `UPDATE assets SET
         serial_number=$1, category=$2, brand=$3, model=$4, price=$5,
         purchase_date=$6, purchase_order=$7, assigned_to=$8,
-        status=$9, notes=$10, updated_at=NOW()
-       WHERE id=$11
+        department=$9, status=$10, notes=$11, updated_at=NOW()
+       WHERE id=$12
        RETURNING *`,
       [
         serial_number.trim(),
         category || 'other',
         brand.trim(), model.trim(), price || 0,
         purchase_date || null, purchase_order?.trim() || null,
-        assigned_to?.trim() || null, status || 'activo',
+        assigned_to?.trim() || null,
+        department?.trim() || null,
+        status || 'activo',
         notes?.trim() || null, req.params.id
       ]
     );
