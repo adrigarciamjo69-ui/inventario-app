@@ -30,8 +30,9 @@ interface LayoutProps {
 
 const navItems = [
   { id: 'dashboard',    label: 'Dashboard',     icon: LayoutDashboard, adminOnly: false },
-  { id: 'assets',       label: 'Inventario',    icon: Package,         adminOnly: false },
+  { id: 'assets',       label: 'Hardware',      icon: Package,         adminOnly: false },
   { id: 'software',     label: 'Software',      icon: Package2,        adminOnly: false },
+  { id: 'services',     label: 'Servicios',     icon: Globe,           adminOnly: false },
   { id: 'floorplan',    label: 'Mapa Plantas',  icon: Map,             adminOnly: false },
   { id: 'deliveries',   label: 'Doc. Entrega',  icon: FileText,        adminOnly: false },
   { id: 'client-users', label: 'Usuarios',      icon: Users2,          adminOnly: false },
