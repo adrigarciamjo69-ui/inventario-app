@@ -74,8 +74,8 @@ export interface SoftwareUserLink {
 }
 
 export interface Asset {
-  id: string;              // PRIMARY KEY (ID interno)
-  serial_number: string;   // Número de serie (obligatorio pero no PK)
+  id: string;
+  serial_number: string;
   category: AssetCategory;
   brand: string;
   model: string;
@@ -83,7 +83,28 @@ export interface Asset {
   purchase_date: string;
   purchase_order: string;
   assigned_to: string;
+  department?: string;
   status: AssetStatus;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type ServiceStatus = 'activo' | 'inactivo' | 'cancelado' | 'pendiente';
+export type BillingCycle = 'mensual' | 'anual' | 'unico' | 'gratuito';
+
+export interface Service {
+  id: number;
+  name: string;
+  provider: string;
+  category: string;
+  url?: string;
+  account?: string;
+  department?: string;
+  cost: number;
+  billing_cycle: BillingCycle;
+  renewal_date?: string;
+  status: ServiceStatus;
   notes?: string;
   created_at?: string;
   updated_at?: string;
