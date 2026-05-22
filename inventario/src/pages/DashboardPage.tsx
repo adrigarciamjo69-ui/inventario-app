@@ -300,11 +300,161 @@ function GeneralView({ assets, software, services }: { assets: Asset[]; software
 
 function HardwareView({ assets }: { assets: Asset[] }) {
   const { getCategoryLabel, getCategoryIcon } = useCategories();
-  const totalValue = assets.reduce((a, x) => a + Number(x.price || 0), 0);
-  const byStatus   = assets.reduce<Record<string,number>>((a,x)=>{a[x.status]=(a[x.status]||0)+1;return a;},{});
+  const [activeCat,  setActiveCat]  = useState<string | null>(null);
+  const [activeDept, setActiveDept] = useState<string | null>(null);
+
+  // Filtered subset used for KPIs and table
+  const filtered = assets.filter(a =>
+    (!activeCat  || a.category   === activeCat) &&
+    (!activeDept || a.department === activeDept)
+  );
+
+  const totalValue = filtered.reduce((a, x) => a + Number(x.price || 0), 0);
+  const byStatus   = filtered.reduce<Record<string,number>>((a,x)=>{a[x.status]=(a[x.status]||0)+1;return a;},{});
+
+  // Always computed on full set for the bar lists
   const byCategory = assets.reduce<Record<string,number>>((a,x)=>{a[x.category]=(a[x.category]||0)+1;return a;},{});
-  const byDept     = assets.reduce<Record<string,number>>((a,x)=>{ if(x.department){a[x.department]=(a[x.department]||0)+1;} return a; },{});
-  const recent     = [...assets].sort((a,b)=>new Date(b.created_at||0).getTime()-new Date(a.created_at||0).getTime()).slice(0,5);
+  const byDept     = assets
+    .filter(a => !activeCat || a.category === activeCat)   // dept list narrows by active category
+    .reduce<Record<string,number>>((a,x)=>{ if(x.department){a[x.department]=(a[x.department]||0)+1;} return a; },{});
+
+  const recent = [...filtered].sort((a,b)=>new Date(b.created_at||0).getTime()-new Date(a.created_at||0).getTime()).slice(0,5);
+
+  const filterLabel = [
+    activeCat  ? getCategoryLabel(activeCat)  : null,
+    activeDept ? activeDept : null,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <div className="space-y-6">
+
+      {/* Active filter pill */}
+      {filterLabel && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400">Filtrando por:</span>
+          <span className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-600/20 border border-blue-500/40 rounded-full text-xs text-blue-300 font-medium">
+            {filterLabel}
+            <button onClick={() => { setActiveCat(null); setActiveDept(null); }}
+              className="ml-1 hover:text-white transition-colors">✕</button>
+          </span>
+        </div>
+      )}
+
+      {/* KPIs — reflect filtered data */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard title={activeCat ? getCategoryLabel(activeCat) : 'Total Hardware'} value={filtered.length}
+          sub={filterLabel || undefined}
+          icon={<Package className="w-5 h-5 text-blue-400" />}
+          gradient="from-blue-600/20 to-blue-900/10" border="border-blue-500/20" />
+        <StatCard title="Activos" value={byStatus['activo']||0}
+          icon={<Activity className="w-5 h-5 text-green-400" />}
+          gradient="from-green-600/20 to-green-900/10" border="border-green-500/20" />
+        <StatCard title="En reparación" value={byStatus['reparacion']||0}
+          icon={<AlertCircle className="w-5 h-5 text-yellow-400" />}
+          gradient="from-yellow-600/20 to-yellow-900/10" border="border-yellow-500/20" />
+        <StatCard title="Valor total"
+          value={`${totalValue.toLocaleString('es-ES',{minimumFractionDigits:2})} €`}
+          sub={filterLabel ? `solo ${filterLabel}` : undefined}
+          icon={<TrendingUp className="w-5 h-5 text-purple-400" />}
+          gradient="from-purple-600/20 to-purple-900/10" border="border-purple-500/20" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        {/* Categorías — clickables */}
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2"><Package className="w-4 h-4 text-blue-400"/>Por categoría</h3>
+            {activeCat && <button onClick={()=>{setActiveCat(null);setActiveDept(null);}} className="text-xs text-gray-500 hover:text-white transition-colors">Limpiar</button>}
+          </div>
+          <div className="space-y-2.5">
+            {Object.entries(byCategory).sort(([,a],[,b])=>b-a).map(([cat,count])=>(
+              <button key={cat} onClick={()=>{ setActiveCat(p=>p===cat?null:cat); setActiveDept(null); }}
+                className={`w-full flex items-center gap-3 rounded-lg px-2 py-1 transition-colors text-left ${activeCat===cat ? 'bg-blue-600/20 ring-1 ring-blue-500/40' : 'hover:bg-gray-800/60'}`}>
+                <span className="text-base flex-shrink-0 w-6 text-center">{getCategoryIcon(cat)}</span>
+                <span className={`text-sm flex-1 ${activeCat===cat ? 'text-blue-300 font-medium' : 'text-gray-300'}`}>{getCategoryLabel(cat)}</span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${activeCat===cat ? 'bg-blue-400' : 'bg-blue-500'}`}
+                      style={{ width: `${(count/assets.length)*100}%` }} />
+                  </div>
+                  <span className={`text-sm font-medium w-6 text-right ${activeCat===cat ? 'text-blue-300' : 'text-white'}`}>{count}</span>
+                </div>
+              </button>
+            ))}
+            {!Object.keys(byCategory).length && <p className="text-gray-500 text-sm text-center py-4">Sin datos</p>}
+          </div>
+        </div>
+
+        {/* Estado */}
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-green-400"/>Por estado {filterLabel && <span className="text-xs text-gray-500 font-normal">({filterLabel})</span>}</h3>
+          <StatusGrid byStatus={byStatus} colors={assetStatusColors} labels={assetStatusLabels} />
+        </div>
+
+        {/* Departamentos — clickables */}
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2"><Building2 className="w-4 h-4 text-cyan-400"/>Por departamento {activeCat && <span className="text-xs text-gray-500 font-normal">({getCategoryLabel(activeCat)})</span>}</h3>
+            {activeDept && <button onClick={()=>setActiveDept(null)} className="text-xs text-gray-500 hover:text-white transition-colors">Limpiar</button>}
+          </div>
+          <div className="space-y-2.5">
+            {Object.entries(byDept).sort(([,a],[,b])=>b-a).map(([d,c])=>(
+              <button key={d} onClick={()=>setActiveDept(p=>p===d?null:d)}
+                className={`w-full flex items-center gap-3 rounded-lg px-2 py-1 transition-colors text-left ${activeDept===d ? 'bg-cyan-600/20 ring-1 ring-cyan-500/40' : 'hover:bg-gray-800/60'}`}>
+                <span className={`text-sm flex-1 ${activeDept===d ? 'text-cyan-300 font-medium' : 'text-gray-300'}`}>{d}</span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${activeDept===d ? 'bg-cyan-400' : 'bg-cyan-500'}`}
+                      style={{ width: `${(c/Object.values(byDept).reduce((a,b)=>a+b,0))*100}%` }} />
+                  </div>
+                  <span className={`text-sm font-medium w-6 text-right ${activeDept===d ? 'text-cyan-300' : 'text-white'}`}>{c}</span>
+                </div>
+              </button>
+            ))}
+            {!Object.keys(byDept).length && <p className="text-gray-500 text-sm text-center py-4">Sin departamentos asignados</p>}
+          </div>
+        </div>
+      </div>
+
+      {/* Tabla — refleja el filtro */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+          <Clock className="w-4 h-4 text-gray-400"/>
+          {filterLabel ? `Activos — ${filterLabel}` : 'Últimos registrados'}
+          <span className="ml-auto text-xs text-gray-500 font-normal">{filtered.length} resultado(s)</span>
+        </h3>
+        {filtered.length === 0 ? <p className="text-gray-500 text-sm text-center py-6">Sin activos para este filtro</p> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-gray-800">
+                {['Serie','Marca / Modelo','Categoría','Asignado a','Departamento','Estado'].map(h=>(
+                  <th key={h} className="text-left text-gray-500 font-medium pb-2 pr-4 text-xs">{h}</th>
+                ))}
+              </tr></thead>
+              <tbody className="divide-y divide-gray-800">
+                {recent.map(a=>(
+                  <tr key={a.id} className="hover:bg-gray-800/50 transition-colors">
+                    <td className="py-2.5 pr-4 text-gray-300 font-mono text-xs">{a.serial_number}</td>
+                    <td className="py-2.5 pr-4 text-white font-medium">{a.brand} {a.model}</td>
+                    <td className="py-2.5 pr-4 text-gray-400 text-xs">{getCategoryIcon(a.category)} {getCategoryLabel(a.category)}</td>
+                    <td className="py-2.5 pr-4 text-gray-400 text-xs">{a.assigned_to||'—'}</td>
+                    <td className="py-2.5 pr-4 text-gray-400 text-xs">{a.department||'—'}</td>
+                    <td className="py-2.5">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${assetStatusColors[a.status]||''}`}>
+                        {assetStatusLabels[a.status]||a.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
   return (
     <div className="space-y-6">
