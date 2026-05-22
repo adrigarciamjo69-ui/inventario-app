@@ -32,6 +32,7 @@ app.use('/api/floorplan', require('./routes/floorplan'));
 app.use('/api/client-users', require('./routes/client-users'));
 app.use('/api/system', require('./routes/system'));
 app.use('/api/settings', require('./routes/settings'));
+app.use('/api/services', require('./routes/services'));
 app.use('/api/deliveries', require('./routes/deliveries'));
 
 // 404
@@ -70,6 +71,7 @@ async function initDB() {
         purchase_date DATE,
         purchase_order VARCHAR(100),
         assigned_to VARCHAR(150),
+        department VARCHAR(100),
         status VARCHAR(20) NOT NULL DEFAULT 'activo' CHECK (status IN ('activo','inactivo','reparacion','baja')),
         notes TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -115,8 +117,28 @@ async function initDB() {
         expiry_date DATE,
         purchase_order VARCHAR(100),
         price NUMERIC(12,2) NOT NULL DEFAULT 0,
+        department VARCHAR(100),
         status VARCHAR(20) NOT NULL DEFAULT 'activo'
           CHECK (status IN ('activo','inactivo','expirado','baja')),
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS services (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(200) NOT NULL,
+        provider VARCHAR(150) NOT NULL DEFAULT '',
+        category VARCHAR(100) NOT NULL DEFAULT 'otros',
+        url VARCHAR(500),
+        account VARCHAR(200),
+        department VARCHAR(100),
+        cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+        billing_cycle VARCHAR(30) NOT NULL DEFAULT 'mensual'
+          CHECK (billing_cycle IN ('mensual','anual','unico','gratuito')),
+        renewal_date DATE,
+        status VARCHAR(20) NOT NULL DEFAULT 'activo'
+          CHECK (status IN ('activo','inactivo','cancelado','pendiente')),
         notes TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -254,6 +276,8 @@ async function initDB() {
     // Migraciones: añadir columnas nuevas si no existen
     await client.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}';
+      ALTER TABLE assets ADD COLUMN IF NOT EXISTS department VARCHAR(100);
+      ALTER TABLE software ADD COLUMN IF NOT EXISTS department VARCHAR(100);
     `);
   } finally {
     client.release();
