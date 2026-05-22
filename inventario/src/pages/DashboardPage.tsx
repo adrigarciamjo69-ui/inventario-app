@@ -642,11 +642,6 @@ function ServicesView({ services }: { services: Service[] }) {
         <StatCard title="Renueva pronto" value={renewing.length}
           icon={<Clock className="w-5 h-5 text-yellow-400" />}
           gradient="from-yellow-600/20 to-yellow-900/10" border="border-yellow-500/20" />
-        <StatCard title="Coste mensual"
-          value={`${monthly.toLocaleString('es-ES',{minimumFractionDigits:2})} €`}
-          sub={activeDept ? `solo ${activeDept}` : undefined}
-          icon={<TrendingUp className="w-5 h-5 text-purple-400" />}
-          gradient="from-purple-600/20 to-purple-900/10" border="border-purple-500/20" />
       </div>
 
       {renewing.length > 0 && (
