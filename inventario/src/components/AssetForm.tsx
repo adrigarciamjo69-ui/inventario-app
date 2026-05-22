@@ -24,6 +24,7 @@ const emptyForm: Omit<Asset, 'created_at' | 'updated_at'> = {
   purchase_date:  '',
   purchase_order: '',
   assigned_to:    '',
+  department:     '',
   status:         'activo',
   notes:          '',
 };
@@ -231,6 +232,7 @@ export default function AssetForm({ asset, onSave, onClose, isEdit }: AssetFormP
         purchase_date:  asset.purchase_date?.slice(0, 10) || '',
         purchase_order: asset.purchase_order || '',
         assigned_to:    asset.assigned_to    || '',
+        department:     asset.department     || '',
         status:         asset.status         || 'activo',
         notes:          asset.notes          || '',
       });
@@ -340,6 +342,12 @@ export default function AssetForm({ asset, onSave, onClose, isEdit }: AssetFormP
                 onChange={val => setForm(f => ({ ...f, assigned_to: val }))}
                 iClass={iClass('assigned_to')}
               />
+            </Field>
+
+            <Field label="Departamento" name="department">
+              <input id="department" type="text" value={form.department}
+                onChange={e => setForm(f => ({ ...f, department: e.target.value }))}
+                placeholder="Ej: TI, RRHH, Contabilidad..." className={iClass('department')} />
             </Field>
 
             <div className="col-span-1 sm:col-span-2 lg:col-span-3">
