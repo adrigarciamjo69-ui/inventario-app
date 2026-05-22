@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import AssetsPage from './pages/AssetsPage';
 import SoftwarePage from './pages/SoftwarePage';
+import ServicesPage from './pages/ServicesPage';
 import UsersPage from './pages/UsersPage';
 import ClientUsersPage from './pages/ClientUsersPage';
 import CategoriesPage from './pages/CategoriesPage';
@@ -29,6 +30,7 @@ function AuthenticatedApp() {
       case 'dashboard':    return <DashboardPage />;
       case 'assets':       return <AssetsPage />;
       case 'software':     return <SoftwarePage />;
+      case 'services':     return <ServicesPage />;
       case 'floorplan':    return <FloorplanPage />;
       case 'deliveries':   return <DeliveryPage />;
       case 'client-users': return <ClientUsersPage />;
