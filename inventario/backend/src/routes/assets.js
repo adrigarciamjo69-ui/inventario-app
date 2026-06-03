@@ -149,8 +149,8 @@ router.post('/import', authenticate, requireEditor, async (req, res) => {
       }
       try {
         const result = await client.query(
-          `INSERT INTO assets (id, serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, status, notes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          `INSERT INTO assets (id, serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, department, status, notes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
            ON CONFLICT (id) DO UPDATE SET
              serial_number=EXCLUDED.serial_number,
              category=EXCLUDED.category, brand=EXCLUDED.brand,
@@ -158,6 +158,7 @@ router.post('/import', authenticate, requireEditor, async (req, res) => {
              purchase_date=EXCLUDED.purchase_date,
              purchase_order=EXCLUDED.purchase_order,
              assigned_to=EXCLUDED.assigned_to,
+             department=EXCLUDED.department,
              status=EXCLUDED.status, notes=EXCLUDED.notes,
              updated_at=NOW()
            RETURNING (xmax = 0) AS inserted`,
@@ -170,6 +171,7 @@ router.post('/import', authenticate, requireEditor, async (req, res) => {
             a.purchase_date || null,
             a.purchase_order?.trim() || null,
             a.assigned_to?.trim() || null,
+            a.department?.trim() || null,
             VALID_STATUSES.includes(a.status) ? a.status : 'activo',
             a.notes?.trim() || null
           ]
