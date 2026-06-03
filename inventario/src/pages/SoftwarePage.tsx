@@ -358,7 +358,7 @@ function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: Softw
         expiry_date: software.expiry_date?.slice(0, 10) || '',
         purchase_order: software.purchase_order || '',
         price: software.price, status: software.status, notes: software.notes || '',
-        department: (software as any).department || '',
+        department: software.department || '',
       });
       if (isEdit) {
         setLoadingDetail(true);
@@ -464,7 +464,7 @@ function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: Softw
                 </div>
               </Field>
               <Field label="Departamento">
-                <input type="text" value={(form as any).department || ''}
+                <input type="text" value={form.department}
                   onChange={e => setForm(f => ({ ...f, department: e.target.value }))}
                   placeholder="Ej: TI, RRHH, Contabilidad..." className={ic()} />
               </Field>
@@ -763,6 +763,7 @@ export default function SoftwarePage() {
                       <div className="flex items-center gap-1">{l}<SortIcon field={f} /></div>
                     </th>
                   ))}
+                  <th className="px-4 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">Departamento</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">Vínculos</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-400">Acciones</th>
                 </tr>
@@ -808,6 +809,7 @@ export default function SoftwarePage() {
                           {getStatusLabel(sw.status)}
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{sw.department || '—'}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-2 text-xs text-gray-500">
                           <span className="flex items-center gap-1"><Monitor className="w-3 h-3" />{(sw as Software & { asset_count?: number }).asset_count || 0}</span>
