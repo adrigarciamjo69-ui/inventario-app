@@ -284,4 +284,47 @@ router.delete('/user-link/:linkId', authenticate, requireEditor, async (req, res
   }
 });
 
+// POST /api/software/import (upsert por name+vendor)
+router.post('/import', authenticate, requireEditor, async (req, res) => {
+  const { items } = req.body;
+  if (!Array.isArray(items) || items.length === 0)
+    return res.status(400).json({ error: 'No se proporcionaron elementos para importar' });
+  const client = await pool.connect();
+  let inserted = 0, updated = 0, errors = [];
+  try {
+    await client.query('BEGIN');
+    for (const s of items) {
+      if (!s.name || !s.vendor) { errors.push(`Fila inválida (falta name o vendor): ${JSON.stringify(s)}`); continue; }
+      try {
+        const existing = await client.query('SELECT id FROM software WHERE name=$1 AND vendor=$2', [s.name.trim(), s.vendor.trim()]);
+        if (existing.rows.length > 0) {
+          await client.query(
+            `UPDATE software SET version=$1,license_type=$2,seats=$3,purchase_date=$4,expiry_date=$5,
+             purchase_order=$6,price=$7,department=$8,status=$9,notes=$10,updated_at=NOW() WHERE id=$11`,
+            [s.version||'', VALID_LICENSE_TYPES.includes(s.license_type)?s.license_type:'perpetua',
+             parseInt(s.seats)||1, s.purchase_date||null, s.expiry_date||null,
+             s.purchase_order?.trim()||null, parseFloat(s.price)||0,
+             s.department?.trim()||null, VALID_STATUSES.includes(s.status)?s.status:'activo',
+             s.notes?.trim()||null, existing.rows[0].id]);
+          updated++;
+        } else {
+          await client.query(
+            `INSERT INTO software (name,vendor,version,license_type,seats,purchase_date,expiry_date,purchase_order,price,department,status,notes)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+            [s.name.trim(), s.vendor.trim(), s.version||'',
+             VALID_LICENSE_TYPES.includes(s.license_type)?s.license_type:'perpetua',
+             parseInt(s.seats)||1, s.purchase_date||null, s.expiry_date||null,
+             s.purchase_order?.trim()||null, parseFloat(s.price)||0,
+             s.department?.trim()||null, VALID_STATUSES.includes(s.status)?s.status:'activo',
+             s.notes?.trim()||null]);
+          inserted++;
+        }
+      } catch (rowErr) { errors.push(`Error en ${s.name}: ${rowErr.message}`); }
+    }
+    await client.query('COMMIT');
+    res.json({ inserted, updated, errors });
+  } catch (err) { await client.query('ROLLBACK'); res.status(500).json({ error: 'Error en la importación' }); }
+  finally { client.release(); }
+});
+
 module.exports = router;
