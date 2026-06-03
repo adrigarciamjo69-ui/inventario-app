@@ -25,7 +25,7 @@ const statusLabels: Record<string, string> = {
 
 const CSV_TEMPLATE_HEADERS = [
   'id', 'serial_number', 'category', 'brand', 'model',
-  'price', 'purchase_date', 'purchase_order', 'assigned_to', 'status', 'notes'
+  'price', 'purchase_date', 'purchase_order', 'assigned_to', 'department', 'status', 'notes'
 ];
 
 type SortField = keyof Asset;
@@ -59,6 +59,7 @@ export default function AssetsPage() {
   const [filterCategory, setFilterCategory]     = useState('');
   const [filterStatus, setFilterStatus]         = useState('');
   const [filterAssignedTo, setFilterAssignedTo] = useState('');
+  const [filterDept, setFilterDept]             = useState('');
   const [sortField, setSortField]         = useState<SortField>('brand');
   const [sortDir, setSortDir]             = useState<'asc' | 'desc'>('asc');
   const [showForm, setShowForm]           = useState(false);
@@ -87,7 +88,7 @@ export default function AssetsPage() {
   useEffect(() => { load(); }, [load]);
 
   // Limpiar selección cuando cambian los filtros
-  useEffect(() => { setSelected(new Set()); }, [search, filterCategory, filterStatus, filterAssignedTo]);
+  useEffect(() => { setSelected(new Set()); }, [search, filterCategory, filterStatus, filterAssignedTo, filterDept]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -96,6 +97,10 @@ export default function AssetsPage() {
 
   const assignedToOptions = Array.from(
     new Set(assets.map(a => a.assigned_to).filter(Boolean))
+  ).sort() as string[];
+
+  const deptOptions = Array.from(
+    new Set(assets.map(a => a.department).filter(Boolean))
   ).sort() as string[];
 
   const filtered = assets
@@ -112,7 +117,8 @@ export default function AssetsPage() {
         ) &&
         (!filterCategory   || a.category    === filterCategory) &&
         (!filterStatus     || a.status      === filterStatus) &&
-        (!filterAssignedTo || a.assigned_to === filterAssignedTo)
+        (!filterAssignedTo || a.assigned_to === filterAssignedTo) &&
+        (!filterDept       || a.department  === filterDept)
       );
     })
     .sort((a, b) => {
@@ -249,7 +255,7 @@ export default function AssetsPage() {
       id: 'IT-001', serial_number: 'SN-ABC12345', category: 'laptop',
       brand: 'Dell', model: 'Latitude 5540', price: '1200.00',
       purchase_date: '2024-01-15', purchase_order: 'OC-2024-001',
-      assigned_to: 'Juan García', status: 'activo', notes: 'Ejemplo'
+      assigned_to: 'Juan García', department: 'TI', status: 'activo', notes: 'Ejemplo'
     }];
     const csv = Papa.unparse({ fields: CSV_TEMPLATE_HEADERS, data: example });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -276,6 +282,7 @@ export default function AssetsPage() {
           purchase_date:  r.purchase_date?.trim() || '',
           purchase_order: r.purchase_order?.trim() || '',
           assigned_to:    r.assigned_to?.trim() || '',
+          department:     r.department?.trim() || '',
           status:         r.status?.trim() || 'activo',
           notes:          r.notes?.trim() || '',
         }));
@@ -398,8 +405,15 @@ export default function AssetsPage() {
               {assignedToOptions.map((name) => (<option key={name} value={name}>{name}</option>))}
             </select>
           </div>
-          {(filterCategory || filterStatus || filterAssignedTo || search) && (
-            <button onClick={() => { setSearch(''); setFilterCategory(''); setFilterStatus(''); setFilterAssignedTo(''); }}
+          {deptOptions.length > 0 && (
+            <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)}
+              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 appearance-none">
+              <option value="">Todos los departamentos</option>
+              {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          )}
+          {(filterCategory || filterStatus || filterAssignedTo || filterDept || search) && (
+            <button onClick={() => { setSearch(''); setFilterCategory(''); setFilterStatus(''); setFilterAssignedTo(''); setFilterDept(''); }}
               className="px-3 py-2 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors">
               Limpiar filtros
             </button>
