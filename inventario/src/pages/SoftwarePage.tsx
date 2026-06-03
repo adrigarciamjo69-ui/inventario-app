@@ -3,7 +3,7 @@ import {
   Plus, Search, Pencil, Trash2, ChevronUp, ChevronDown,
   Filter, AlertTriangle, Package2, Link2, Link2Off,
   Users2, Monitor, X, Save, Key, Calendar, Hash, Loader2,
-  CheckSquare, Square, Download, Tag
+  CheckSquare, Square, Download, Tag, Upload, Building2
 } from 'lucide-react';
 import Papa from 'papaparse';
 import toast from 'react-hot-toast';
@@ -15,7 +15,7 @@ import {
   getSoftwareList, createSoftware, updateSoftware, deleteSoftware,
   getSoftware, linkSoftwareAsset, unlinkSoftwareAsset,
   linkSoftwareUser, unlinkSoftwareUser,
-  getAssets, getClientUsers
+  getAssets, getClientUsers, apiClient
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Asset } from '../types';
@@ -514,6 +514,8 @@ export default function SoftwarePage() {
   const [search, setSearch]           = useState('');
   const [filterStatus, setFilterStatus]   = useState('');
   const [filterLicense, setFilterLicense] = useState('');
+  const [filterDept, setFilterDept]       = useState('');
+  const [importLoading, setImportLoading] = useState(false);
   const [sortField, setSortField]     = useState<keyof Software>('name');
   const [sortDir, setSortDir]         = useState<'asc' | 'desc'>('asc');
   const [showForm, setShowForm]       = useState(false);
@@ -534,7 +536,7 @@ export default function SoftwarePage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setSelected(new Set()); }, [search, filterStatus, filterLicense]);
+  useEffect(() => { setSelected(new Set()); }, [search, filterStatus, filterLicense, filterDept]);
 
   const handleSort = (f: keyof Software) => {
     if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -547,7 +549,8 @@ export default function SoftwarePage() {
       return (
         (!q || s.name.toLowerCase().includes(q) || s.vendor.toLowerCase().includes(q) || s.version?.toLowerCase().includes(q)) &&
         (!filterStatus  || s.status       === filterStatus) &&
-        (!filterLicense || s.license_type === filterLicense)
+        (!filterLicense || s.license_type === filterLicense) &&
+        (!filterDept    || s.department   === filterDept)
       );
     })
     .sort((a, b) => {
@@ -625,6 +628,46 @@ export default function SoftwarePage() {
     setDeleting(true);
     try { await deleteSoftware(deleteModal.id); toast.success('Software eliminado'); setDeleteModal(null); load(); }
     catch { toast.error('Error al eliminar'); } finally { setDeleting(false); }
+  };
+
+  const deptOptions = [...new Set(list.map(s => s.department).filter(Boolean))].sort() as string[];
+
+  const handleDownloadTemplate = () => {
+    const example = [{ name: 'Microsoft Office 365', vendor: 'Microsoft', version: '2024',
+      license_type: 'suscripcion', seats: '10', purchase_date: '2024-01-15',
+      expiry_date: '2025-01-15', purchase_order: 'OC-2024-001', price: '1200.00',
+      department: 'TI', status: 'activo', notes: 'Licencia anual' }];
+    const csv = Papa.unparse({ fields: ['name','vendor','version','license_type','seats',
+      'purchase_date','expiry_date','purchase_order','price','department','status','notes'], data: example });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    a.download = 'plantilla_software.csv'; a.click();
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setImportLoading(true);
+    Papa.parse<Record<string,string>>(file, {
+      header: true, skipEmptyLines: true,
+      complete: async (results) => {
+        const items = results.data.map(r => ({
+          name: r.name?.trim()||'', vendor: r.vendor?.trim()||'',
+          version: r.version?.trim()||'', license_type: r.license_type?.trim()||'perpetua',
+          seats: parseInt(r.seats)||1, purchase_date: r.purchase_date?.trim()||'',
+          expiry_date: r.expiry_date?.trim()||'', purchase_order: r.purchase_order?.trim()||'',
+          price: parseFloat(r.price)||0, department: r.department?.trim()||'',
+          status: r.status?.trim()||'activo', notes: r.notes?.trim()||'',
+        }));
+        try {
+          const res = await apiClient.post('/software/import', { items });
+          toast.success(`Importados: ${res.data.inserted} nuevos, ${res.data.updated} actualizados`);
+          load();
+        } catch (err: any) {
+          toast.error(err?.response?.data?.error || 'Error en la importación');
+        } finally { setImportLoading(false); e.target.value = ''; }
+      },
+      error: () => { toast.error('Error al leer el CSV'); setImportLoading(false); }
+    });
   };
 
   const SortIcon = ({ field }: { field: keyof Software }) =>
@@ -724,6 +767,31 @@ export default function SoftwarePage() {
               <option value="">Todos los tipos</option>
               {LICENSE_TYPES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
             </select>
+            {deptOptions.length > 0 && (
+              <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 appearance-none">
+                <option value="">Todos los departamentos</option>
+                {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            )}
+            {(filterStatus || filterLicense || filterDept || search) && (
+              <button onClick={() => { setSearch(''); setFilterStatus(''); setFilterLicense(''); setFilterDept(''); }}
+                className="px-3 py-2 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors">
+                Limpiar
+              </button>
+            )}
+            <div className="flex-1" />
+            <button onClick={handleDownloadTemplate} title="Descargar plantilla CSV"
+              className="flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm rounded-lg transition-colors">
+              <Download className="w-4 h-4" /> Plantilla
+            </button>
+            {canEdit && (
+              <label className={`flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm rounded-lg transition-colors cursor-pointer ${importLoading ? 'opacity-60 pointer-events-none' : ''}`}>
+                {importLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                Importar CSV
+                <input type="file" accept=".csv" className="hidden" onChange={handleImport} />
+              </label>
+            )}
           </div>
         </div>
       </div>
