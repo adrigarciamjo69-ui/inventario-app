@@ -103,4 +103,48 @@ router.delete('/:id', authenticate, requireEditor, async (req, res) => {
   }
 });
 
+// POST /api/services/import
+router.post('/import', authenticate, requireEditor, async (req, res) => {
+  const { items } = req.body;
+  if (!Array.isArray(items) || items.length === 0)
+    return res.status(400).json({ error: 'No se proporcionaron elementos para importar' });
+  const client = await pool.connect();
+  let inserted = 0, updated = 0, errors = [];
+  const VALID_BILLING = ['mensual','anual','unico','gratuito'];
+  const VALID_STATUSES = ['activo','inactivo','cancelado','pendiente'];
+  try {
+    await client.query('BEGIN');
+    for (const s of items) {
+      if (!s.name) { errors.push(`Fila inválida (falta name): ${JSON.stringify(s)}`); continue; }
+      try {
+        const existing = await client.query('SELECT id FROM services WHERE name=$1', [s.name.trim()]);
+        if (existing.rows.length > 0) {
+          await client.query(
+            `UPDATE services SET provider=$1,category=$2,url=$3,account=$4,department=$5,
+             cost=$6,billing_cycle=$7,renewal_date=$8,status=$9,notes=$10,updated_at=NOW() WHERE id=$11`,
+            [s.provider?.trim()||'', s.category?.trim()||'otros', s.url?.trim()||null,
+             s.account?.trim()||null, s.department?.trim()||null, parseFloat(s.cost)||0,
+             VALID_BILLING.includes(s.billing_cycle)?s.billing_cycle:'mensual',
+             s.renewal_date||null, VALID_STATUSES.includes(s.status)?s.status:'activo',
+             s.notes?.trim()||null, existing.rows[0].id]);
+          updated++;
+        } else {
+          await client.query(
+            `INSERT INTO services (name,provider,category,url,account,department,cost,billing_cycle,renewal_date,status,notes)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+            [s.name.trim(), s.provider?.trim()||'', s.category?.trim()||'otros',
+             s.url?.trim()||null, s.account?.trim()||null, s.department?.trim()||null,
+             parseFloat(s.cost)||0, VALID_BILLING.includes(s.billing_cycle)?s.billing_cycle:'mensual',
+             s.renewal_date||null, VALID_STATUSES.includes(s.status)?s.status:'activo',
+             s.notes?.trim()||null]);
+          inserted++;
+        }
+      } catch (rowErr) { errors.push(`Error en ${s.name}: ${rowErr.message}`); }
+    }
+    await client.query('COMMIT');
+    res.json({ inserted, updated, errors });
+  } catch (err) { await client.query('ROLLBACK'); res.status(500).json({ error: 'Error en la importación' }); }
+  finally { client.release(); }
+});
+
 module.exports = router;
