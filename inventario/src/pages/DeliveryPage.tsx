@@ -184,10 +184,15 @@ function InlineStatus({ record, onUpdated }: { record: DeliveryRecord; onUpdated
   const [saving, setSaving] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const btnRef = useRef<HTMLButtonElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const h = (e: MouseEvent) => { if (btnRef.current && !btnRef.current.contains(e.target as Node)) setOpen(false); };
+    const h = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || dropRef.current?.contains(t)) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, [open]);
@@ -213,7 +218,7 @@ function InlineStatus({ record, onUpdated }: { record: DeliveryRecord; onUpdated
         {cfg.label} <ChevronDown className="w-2.5 h-2.5" />
       </button>
       {open && createPortal(
-        <div style={{ position:'fixed', top:pos.top, left:pos.left, zIndex:9999 }}
+        <div ref={dropRef} style={{ position:'fixed', top:pos.top, left:pos.left, zIndex:9999 }}
           className="bg-gray-800 border border-gray-700 rounded-xl shadow-xl overflow-hidden w-36">
           {Object.entries(STATUS_CONFIG).map(([k,v]) => (
             <button key={k} onClick={() => change(k as DeliveryStatus)}
