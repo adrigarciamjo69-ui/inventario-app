@@ -32,22 +32,22 @@ export type SoftwareLicenseType = 'perpetua' | 'suscripcion' | 'freeware' | 'ope
 export type SoftwareStatus = 'activo' | 'inactivo' | 'expirado' | 'baja';
 
 export interface Software {
-  id: number;            // PK autoincremental
-  name: string;          // Nombre del software
-  vendor: string;        // Fabricante/proveedor
-  version: string;       // Versión
-  license_key?: string;  // Clave de licencia
+  id: number;
+  name: string;
+  vendor: string;
+  version: string;
+  license_key?: string;
   license_type: SoftwareLicenseType;
-  seats: number;         // Número de licencias/puestos
+  seats: number;
   purchase_date?: string;
   expiry_date?: string;
   purchase_order?: string;
   price: number;
+  department?: string;
   status: SoftwareStatus;
   notes?: string;
   created_at?: string;
   updated_at?: string;
-  // Relaciones (desde JOIN)
   asset_assignments?: SoftwareAssetLink[];
   user_assignments?: SoftwareUserLink[];
 }
