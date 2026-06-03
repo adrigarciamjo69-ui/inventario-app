@@ -60,14 +60,14 @@ router.get('/:id', authenticate, async (req, res) => {
 
 // POST /api/software
 router.post('/', authenticate, requireEditor, async (req, res) => {
-  const { name, vendor, version, license_key, license_type, seats, purchase_date, expiry_date, purchase_order, price, status, notes } = req.body;
+  const { name, vendor, version, license_key, license_type, seats, purchase_date, expiry_date, purchase_order, price, department, status, notes } = req.body;
   if (!name || !vendor) {
     return res.status(400).json({ error: 'Nombre y proveedor son requeridos' });
   }
   try {
     const { rows } = await pool.query(
-      `INSERT INTO software (name, vendor, version, license_key, license_type, seats, purchase_date, expiry_date, purchase_order, price, status, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      `INSERT INTO software (name, vendor, version, license_key, license_type, seats, purchase_date, expiry_date, purchase_order, price, department, status, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
       [
         name.trim(), vendor.trim(), version?.trim() || '',
         license_key?.trim() || null,
@@ -76,6 +76,7 @@ router.post('/', authenticate, requireEditor, async (req, res) => {
         purchase_date || null, expiry_date || null,
         purchase_order?.trim() || null,
         parseFloat(price) || 0,
+        department?.trim() || null,
         VALID_STATUSES.includes(status) ? status : 'activo',
         notes?.trim() || null
       ]
@@ -89,7 +90,7 @@ router.post('/', authenticate, requireEditor, async (req, res) => {
 
 // PUT /api/software/:id
 router.put('/:id', authenticate, requireEditor, async (req, res) => {
-  const { name, vendor, version, license_key, license_type, seats, purchase_date, expiry_date, purchase_order, price, status, notes } = req.body;
+  const { name, vendor, version, license_key, license_type, seats, purchase_date, expiry_date, purchase_order, price, department, status, notes } = req.body;
   if (!name || !vendor) {
     return res.status(400).json({ error: 'Nombre y proveedor son requeridos' });
   }
@@ -97,9 +98,10 @@ router.put('/:id', authenticate, requireEditor, async (req, res) => {
     const { rows } = await pool.query(
       `UPDATE software SET
         name=$1, vendor=$2, version=$3, license_key=$4, license_type=$5, seats=$6,
-        purchase_date=$7, expiry_date=$8, purchase_order=$9, price=$10, status=$11, notes=$12,
+        purchase_date=$7, expiry_date=$8, purchase_order=$9, price=$10,
+        department=$11, status=$12, notes=$13,
         updated_at=NOW()
-       WHERE id=$13 RETURNING *`,
+       WHERE id=$14 RETURNING *`,
       [
         name.trim(), vendor.trim(), version?.trim() || '',
         license_key?.trim() || null,
@@ -108,6 +110,7 @@ router.put('/:id', authenticate, requireEditor, async (req, res) => {
         purchase_date || null, expiry_date || null,
         purchase_order?.trim() || null,
         parseFloat(price) || 0,
+        department?.trim() || null,
         VALID_STATUSES.includes(status) ? status : 'activo',
         notes?.trim() || null,
         req.params.id
