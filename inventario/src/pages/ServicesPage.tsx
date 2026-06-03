@@ -2,8 +2,9 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Plus, Search, Pencil, Trash2, X, Save, Globe, ExternalLink,
   Calendar, RefreshCw, AlertTriangle, Loader2, CheckSquare, Square,
-  ChevronUp, ChevronDown, Filter
+  ChevronUp, ChevronDown, Filter, Upload, Download
 } from 'lucide-react';
+import Papa from 'papaparse';
 import toast from 'react-hot-toast';
 import { apiClient } from '../api/client';
 import { Service, ServiceStatus, BillingCycle } from '../types';
@@ -171,6 +172,7 @@ export default function ServicesPage() {
   const [sortField, setSortField] = useState<keyof Service>('name');
   const [sortDir, setSortDir]     = useState<'asc'|'desc'>('asc');
   const [deleting, setDeleting]   = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -248,6 +250,44 @@ export default function ServicesPage() {
     return days >= 0 && days <= 30;
   });
 
+  const handleDownloadTemplate = () => {
+    const example = [{ name: 'Google Workspace', provider: 'Google LLC',
+      category: 'Cloud / Hosting', url: 'https://workspace.google.com',
+      account: 'admin@empresa.com', department: 'TI', cost: '120.00',
+      billing_cycle: 'mensual', renewal_date: '2025-12-31', status: 'activo', notes: 'Plan Business' }];
+    const csv = Papa.unparse({ fields: ['name','provider','category','url','account',
+      'department','cost','billing_cycle','renewal_date','status','notes'], data: example });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    a.download = 'plantilla_servicios.csv'; a.click();
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setImportLoading(true);
+    Papa.parse<Record<string,string>>(file, {
+      header: true, skipEmptyLines: true,
+      complete: async (results) => {
+        const items = results.data.map(r => ({
+          name: r.name?.trim()||'', provider: r.provider?.trim()||'',
+          category: r.category?.trim()||'otros', url: r.url?.trim()||'',
+          account: r.account?.trim()||'', department: r.department?.trim()||'',
+          cost: parseFloat(r.cost)||0, billing_cycle: r.billing_cycle?.trim()||'mensual',
+          renewal_date: r.renewal_date?.trim()||'', status: r.status?.trim()||'activo',
+          notes: r.notes?.trim()||'',
+        }));
+        try {
+          const res = await apiClient.post('/services/import', { items });
+          toast.success(`Importados: ${res.data.inserted} nuevos, ${res.data.updated} actualizados`);
+          load();
+        } catch (err: any) {
+          toast.error(err?.response?.data?.error || 'Error en la importación');
+        } finally { setImportLoading(false); e.target.value = ''; }
+      },
+      error: () => { toast.error('Error al leer el CSV'); setImportLoading(false); }
+    });
+  };
+
   const totalCost = filtered.reduce((acc, s) => {
     const monthly = s.billing_cycle === 'mensual' ? s.cost : s.billing_cycle === 'anual' ? s.cost / 12 : 0;
     return acc + monthly;
@@ -275,6 +315,7 @@ export default function ServicesPage() {
           { label: 'Total', value: services.length, color: 'text-blue-400' },
           { label: 'Activos', value: services.filter(s => s.status === 'activo').length, color: 'text-green-400' },
           { label: 'Renovación prox.', value: soonRenewal.length, color: 'text-yellow-400' },
+          { label: 'Coste mensual', value: `${totalCost.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €`, color: 'text-purple-400' },
         ].map(s => (
           <div key={s.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <p className="text-xs text-gray-500 mb-1">{s.label}</p>
@@ -321,6 +362,17 @@ export default function ServicesPage() {
         <button onClick={load} className="p-2 bg-gray-900 border border-gray-800 rounded-lg text-gray-400 hover:text-white transition-colors">
           <RefreshCw className="w-4 h-4" />
         </button>
+        <button onClick={handleDownloadTemplate} title="Descargar plantilla CSV"
+          className="flex items-center gap-1.5 px-3 py-2 bg-gray-900 border border-gray-800 text-gray-400 hover:text-white text-sm rounded-lg transition-colors">
+          <Download className="w-4 h-4" /> Plantilla
+        </button>
+        {canEdit && (
+          <label className={`flex items-center gap-1.5 px-3 py-2 bg-gray-900 border border-gray-800 text-gray-400 hover:text-white text-sm rounded-lg transition-colors cursor-pointer ${importLoading ? 'opacity-60 pointer-events-none' : ''}`}>
+            {importLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            Importar CSV
+            <input type="file" accept=".csv" className="hidden" onChange={handleImport} />
+          </label>
+        )}
       </div>
 
       {/* Bulk delete */}
