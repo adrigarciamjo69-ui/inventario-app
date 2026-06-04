@@ -36,9 +36,10 @@ interface FormModalProps {
   user: ClientUser | null;
   onSave: (data: typeof emptyForm) => Promise<void>;
   onClose: () => void;
+  departments: string[];
 }
 
-function FormModal({ user, onSave, onClose }: FormModalProps) {
+function FormModal({ user, onSave, onClose, departments }: FormModalProps) {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -121,9 +122,12 @@ function FormModal({ user, onSave, onClose }: FormModalProps) {
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Departamento">
-              <input type="text" value={form.department}
+              <input type="text" list="dept-options" value={form.department}
                 onChange={e => setForm(f => ({ ...f, department: e.target.value }))}
-                placeholder="Informática" className={ic()} />
+                placeholder="Selecciona o escribe un departamento" className={ic()} />
+              <datalist id="dept-options">
+                {departments.map(d => <option key={d} value={d} />)}
+              </datalist>
             </Field>
             <Field label="Cargo / Puesto">
               <input type="text" value={form.position}
@@ -490,6 +494,7 @@ export default function ClientUsersPage() {
           user={editUser}
           onSave={handleSave}
           onClose={() => { setShowForm(false); setEditUser(null); }}
+          departments={departments}
         />
       )}
 
