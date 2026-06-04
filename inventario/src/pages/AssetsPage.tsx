@@ -156,14 +156,17 @@ export default function AssetsPage() {
   };
 
   const lastClickedId = useRef<string | null>(null);
+  const filteredIdsRef = useRef<string[]>([]);
+  filteredIdsRef.current = filteredIds;
 
   const toggleOne = (id: string, shiftKey = false) => {
+    const ids = filteredIdsRef.current;
     if (shiftKey && lastClickedId.current && lastClickedId.current !== id) {
-      const fromIdx = filteredIds.indexOf(lastClickedId.current);
-      const toIdx   = filteredIds.indexOf(id);
+      const fromIdx = ids.indexOf(lastClickedId.current);
+      const toIdx   = ids.indexOf(id);
       if (fromIdx !== -1 && toIdx !== -1) {
         const [start, end] = fromIdx < toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx];
-        const rangeIds = filteredIds.slice(start, end + 1);
+        const rangeIds = ids.slice(start, end + 1);
         setSelected(prev => {
           const n = new Set(prev);
           rangeIds.forEach(rid => n.add(rid));
@@ -649,11 +652,15 @@ export default function AssetsPage() {
                   return (
                     <tr key={a.id}
                       className={`hover:bg-gray-800/40 transition-colors cursor-pointer select-none ${isSelected ? 'bg-blue-600/5' : ''}`}
-                      onClick={(e) => { if (e.shiftKey) e.preventDefault(); toggleOne(a.id, e.shiftKey); }}
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest('td:last-child')) return;
+                        if (e.shiftKey) e.preventDefault();
+                        toggleOne(a.id, e.shiftKey);
+                      }}
                     >
-                      {/* Checkbox fila */}
+                      {/* Checkbox fila — no llama a toggleOne, el tr lo gestiona */}
                       <td className="px-3 py-3">
-                        <Checkbox checked={isSelected} onChange={() => toggleOne(a.id)} />
+                        <Checkbox checked={isSelected} onChange={() => {}} />
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-blue-400 whitespace-nowrap font-medium">{a.id}</td>
                       <td className="px-4 py-3 font-mono text-xs text-gray-300 whitespace-nowrap">{a.serial_number}</td>
