@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Plus, Search, Download, Upload, Pencil, Trash2,
   ChevronUp, ChevronDown, Filter, FileDown, AlertTriangle, Package,
-  User2, X, CheckSquare, Square, Tag, Paperclip
+  User2, X, CheckSquare, Square, Tag, Paperclip, Edit2
 } from 'lucide-react';
 import Papa from 'papaparse';
 import toast from 'react-hot-toast';
@@ -25,7 +25,7 @@ const statusLabels: Record<string, string> = {
 
 const CSV_TEMPLATE_HEADERS = [
   'id', 'serial_number', 'category', 'brand', 'model',
-  'price', 'purchase_date', 'purchase_order', 'assigned_to', 'department', 'status', 'notes'
+  'price', 'purchase_date', 'purchase_order', 'assigned_to', 'status', 'notes'
 ];
 
 type SortField = keyof Asset;
@@ -56,10 +56,9 @@ export default function AssetsPage() {
   const [assets, setAssets]               = useState<Asset[]>([]);
   const [loading, setLoading]             = useState(true);
   const [search, setSearch]               = useState('');
-  const [filterCategory, setFilterCategory]     = useState('');
-  const [filterStatus, setFilterStatus]         = useState('');
-  const [filterAssignedTo, setFilterAssignedTo] = useState('');
-  const [filterDept, setFilterDept]             = useState('');
+  const [filterCategory, setFilterCategory]     = useState<Set<string>>(new Set());
+  const [filterStatus, setFilterStatus]         = useState<Set<string>>(new Set());
+  const [filterAssignedTo, setFilterAssignedTo] = useState<Set<string>>(new Set());
   const [sortField, setSortField]         = useState<SortField>('brand');
   const [sortDir, setSortDir]             = useState<'asc' | 'desc'>('asc');
   const [showForm, setShowForm]           = useState(false);
@@ -74,6 +73,10 @@ export default function AssetsPage() {
   const [bulkDeleting, setBulkDeleting]   = useState(false);
   const [bulkStatusModal, setBulkStatusModal] = useState(false);
   const [bulkStatus, setBulkStatus]       = useState('activo');
+  const [bulkEditModal, setBulkEditModal] = useState(false);
+  const [bulkEditField, setBulkEditField] = useState('status');
+  const [bulkEditValue, setBulkEditValue] = useState('');
+  const [bulkEditing, setBulkEditing]     = useState(false);
 
   const canEdit = user?.role === 'admin' || user?.role === 'editor';
 
@@ -87,8 +90,7 @@ export default function AssetsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Limpiar selección cuando cambian los filtros
-  useEffect(() => { setSelected(new Set()); }, [search, filterCategory, filterStatus, filterAssignedTo, filterDept]);
+  useEffect(() => { setSelected(new Set()); }, [search, filterCategory, filterStatus, filterAssignedTo]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -97,10 +99,6 @@ export default function AssetsPage() {
 
   const assignedToOptions = Array.from(
     new Set(assets.map(a => a.assigned_to).filter(Boolean))
-  ).sort() as string[];
-
-  const deptOptions = Array.from(
-    new Set(assets.map(a => a.department).filter(Boolean))
   ).sort() as string[];
 
   const filtered = assets
@@ -115,10 +113,9 @@ export default function AssetsPage() {
           (a.id?.toLowerCase().includes(q) ?? false) ||
           (a.purchase_order?.toLowerCase().includes(q) ?? false)
         ) &&
-        (!filterCategory   || a.category    === filterCategory) &&
-        (!filterStatus     || a.status      === filterStatus) &&
-        (!filterAssignedTo || a.assigned_to === filterAssignedTo) &&
-        (!filterDept       || a.department  === filterDept)
+        (!filterCategory.size   || filterCategory.has(a.category))  &&
+        (!filterStatus.size     || filterStatus.has(a.status))      &&
+        (!filterAssignedTo.size || filterAssignedTo.has(a.assigned_to ?? ''))
       );
     })
     .sort((a, b) => {
@@ -185,6 +182,26 @@ export default function AssetsPage() {
     load();
   };
 
+  const handleBulkEdit = async () => {
+    if (!bulkEditValue.trim() && bulkEditField !== 'assigned_to') return;
+    setBulkEditing(true);
+    let ok = 0, fail = 0;
+    for (const id of selected) {
+      const asset = assets.find(a => a.id === id);
+      if (!asset) continue;
+      try {
+        await updateAsset(id, { ...asset, [bulkEditField]: bulkEditValue });
+        ok++;
+      } catch { fail++; }
+    }
+    setBulkEditing(false);
+    setBulkEditModal(false);
+    clearSelection();
+    if (ok > 0) toast.success(`Campo actualizado en ${ok} activo${ok > 1 ? 's' : ''}`);
+    if (fail > 0) toast.error(`${fail} activo${fail > 1 ? 's' : ''} no se pudo${fail > 1 ? 'ron' : ''} actualizar`);
+    load();
+  };
+
   const handleBulkStatus = async () => {
     let ok = 0, fail = 0;
     for (const id of selected) {
@@ -209,8 +226,13 @@ export default function AssetsPage() {
         await updateAsset(editAsset.id, data);
         toast.success('Activo actualizado correctamente');
       } else {
-        await createAsset(data);
-        toast.success('Activo creado correctamente');
+        const res = await createAsset(data);
+        const linked = res.data?.delivery_links_created ?? 0;
+        if (linked > 0) {
+          toast.success(`Activo creado · ${linked} acta${linked > 1 ? 's' : ''} de entrega vinculada${linked > 1 ? 's' : ''} automáticamente 🔗`);
+        } else {
+          toast.success('Activo creado correctamente');
+        }
       }
       setShowForm(false); setEditAsset(null); load();
     } catch (err: unknown) {
@@ -255,7 +277,7 @@ export default function AssetsPage() {
       id: 'IT-001', serial_number: 'SN-ABC12345', category: 'laptop',
       brand: 'Dell', model: 'Latitude 5540', price: '1200.00',
       purchase_date: '2024-01-15', purchase_order: 'OC-2024-001',
-      assigned_to: 'Juan García', department: 'TI', status: 'activo', notes: 'Ejemplo'
+      assigned_to: 'Juan García', status: 'activo', notes: 'Ejemplo'
     }];
     const csv = Papa.unparse({ fields: CSV_TEMPLATE_HEADERS, data: example });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -272,17 +294,27 @@ export default function AssetsPage() {
     Papa.parse<Record<string, string>>(file, {
       header: true, skipEmptyLines: true,
       complete: async (results) => {
+        // Build a normalization map: lowercase/trimmed label or value -> canonical value
+        const catMap = new Map<string, string>();
+        categories.forEach(c => {
+          catMap.set(c.value.toLowerCase().trim(), c.value);
+          catMap.set(c.label.toLowerCase().trim(), c.value);
+        });
+        const normalizeCategory = (raw: string) => {
+          const key = (raw || '').toLowerCase().trim();
+          return catMap.get(key) || key || 'other';
+        };
+
         const rows = results.data.map((r) => ({
           id:             r.id?.trim() || '',
           serial_number:  r.serial_number?.trim() || '',
-          category:       r.category?.trim() || 'other',
+          category:       normalizeCategory(r.category?.trim() || ''),
           brand:          r.brand?.trim() || '',
           model:          r.model?.trim() || '',
           price:          parseFloat(r.price) || 0,
           purchase_date:  r.purchase_date?.trim() || '',
           purchase_order: r.purchase_order?.trim() || '',
           assigned_to:    r.assigned_to?.trim() || '',
-          department:     r.department?.trim() || '',
           status:         r.status?.trim() || 'activo',
           notes:          r.notes?.trim() || '',
         }));
@@ -349,6 +381,12 @@ export default function AssetsPage() {
                 >
                   <Tag className="w-3.5 h-3.5" /> Cambiar estado
                 </button>
+                <button
+                  onClick={() => { setBulkEditField('status'); setBulkEditValue(''); setBulkEditModal(true); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-xs rounded-lg transition-colors"
+                >
+                  <Edit2 className="w-3.5 h-3.5" /> Edición masiva
+                </button>
                 {user?.role === 'admin' && (
                   <button
                     onClick={() => setBulkDeleteModal(true)}
@@ -381,39 +419,64 @@ export default function AssetsPage() {
           />
         </div>
         <div className="flex flex-wrap gap-2 items-center">
-          <div className="relative">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
-            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}
-              className="bg-gray-800 border border-gray-700 rounded-lg pl-8 pr-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 appearance-none">
-              <option value="">Todas las categorías</option>
-              {categories.map((c) => (<option key={c.value} value={c.value}>{c.label}</option>))}
-            </select>
+          <div className="relative group">
+            <button className={`flex items-center gap-1.5 bg-gray-800 border ${filterCategory.size ? 'border-blue-500 text-blue-300' : 'border-gray-700 text-white'} rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none`}>
+              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+              {filterCategory.size ? `Categoría (${filterCategory.size})` : 'Todas las categorías'}
+            </button>
+            <div className="absolute z-30 top-full left-0 mt-1 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl min-w-[200px] p-2 hidden group-focus-within:block group-hover:block">
+              {categories.map((c) => (
+                <label key={c.value} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-800 rounded-lg cursor-pointer text-sm text-gray-300">
+                  <input type="checkbox" checked={filterCategory.has(c.value)}
+                    onChange={() => setFilterCategory(prev => { const n = new Set(prev); n.has(c.value) ? n.delete(c.value) : n.add(c.value); return n; })}
+                    className="rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-0" />
+                  {c.icon ? `${c.icon} ` : ''}{c.label}
+                </label>
+              ))}
+              {filterCategory.size > 0 && (
+                <button onClick={() => setFilterCategory(new Set())} className="w-full mt-1 px-3 py-1 text-xs text-gray-500 hover:text-white text-left">Limpiar</button>
+              )}
+            </div>
           </div>
-          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 appearance-none">
-            <option value="">Todos los estados</option>
-            <option value="activo">Activo</option>
-            <option value="inactivo">Inactivo</option>
-            <option value="reparacion">En reparación</option>
-            <option value="baja">Baja</option>
-          </select>
-          <div className="relative">
-            <User2 className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
-            <select value={filterAssignedTo} onChange={(e) => setFilterAssignedTo(e.target.value)}
-              className="bg-gray-800 border border-gray-700 rounded-lg pl-8 pr-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 appearance-none">
-              <option value="">Todos los usuarios</option>
-              {assignedToOptions.map((name) => (<option key={name} value={name}>{name}</option>))}
-            </select>
+          <div className="relative group">
+            <button className={`flex items-center gap-1.5 bg-gray-800 border ${filterStatus.size ? 'border-blue-500 text-blue-300' : 'border-gray-700 text-white'} rounded-lg px-3 py-2 text-sm focus:outline-none`}>
+              {filterStatus.size ? `Estado (${filterStatus.size})` : 'Todos los estados'}
+            </button>
+            <div className="absolute z-30 top-full left-0 mt-1 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl min-w-[180px] p-2 hidden group-focus-within:block group-hover:block">
+              {(['activo','inactivo','reparacion','baja'] as const).map((s) => (
+                <label key={s} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-800 rounded-lg cursor-pointer text-sm text-gray-300">
+                  <input type="checkbox" checked={filterStatus.has(s)}
+                    onChange={() => setFilterStatus(prev => { const n = new Set(prev); n.has(s) ? n.delete(s) : n.add(s); return n; })}
+                    className="rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-0" />
+                  {statusLabels[s]}
+                </label>
+              ))}
+              {filterStatus.size > 0 && (
+                <button onClick={() => setFilterStatus(new Set())} className="w-full mt-1 px-3 py-1 text-xs text-gray-500 hover:text-white text-left">Limpiar</button>
+              )}
+            </div>
           </div>
-          {deptOptions.length > 0 && (
-            <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)}
-              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 appearance-none">
-              <option value="">Todos los departamentos</option>
-              {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-          )}
-          {(filterCategory || filterStatus || filterAssignedTo || filterDept || search) && (
-            <button onClick={() => { setSearch(''); setFilterCategory(''); setFilterStatus(''); setFilterAssignedTo(''); setFilterDept(''); }}
+          <div className="relative group">
+            <button className={`flex items-center gap-1.5 bg-gray-800 border ${filterAssignedTo.size ? 'border-blue-500 text-blue-300' : 'border-gray-700 text-white'} rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none`}>
+              <User2 className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+              {filterAssignedTo.size ? `Usuario (${filterAssignedTo.size})` : 'Todos los usuarios'}
+            </button>
+            <div className="absolute z-30 top-full left-0 mt-1 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl min-w-[220px] max-h-52 overflow-y-auto p-2 hidden group-focus-within:block group-hover:block">
+              {assignedToOptions.map((name) => (
+                <label key={name} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-800 rounded-lg cursor-pointer text-sm text-gray-300">
+                  <input type="checkbox" checked={filterAssignedTo.has(name)}
+                    onChange={() => setFilterAssignedTo(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; })}
+                    className="rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-0" />
+                  {name}
+                </label>
+              ))}
+              {filterAssignedTo.size > 0 && (
+                <button onClick={() => setFilterAssignedTo(new Set())} className="w-full mt-1 px-3 py-1 text-xs text-gray-500 hover:text-white text-left">Limpiar</button>
+              )}
+            </div>
+          </div>
+          {(filterCategory.size > 0 || filterStatus.size > 0 || filterAssignedTo.size > 0 || search) && (
+            <button onClick={() => { setSearch(''); setFilterCategory(new Set()); setFilterStatus(new Set()); setFilterAssignedTo(new Set()); }}
               className="px-3 py-2 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors">
               Limpiar filtros
             </button>
@@ -482,7 +545,6 @@ export default function AssetsPage() {
                       <div className="flex items-center gap-1">{label}<SortIcon field={field} /></div>
                     </th>
                   ))}
-                  <th className="px-4 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">Departamento</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-400">Acciones</th>
                 </tr>
               </thead>
@@ -514,13 +576,12 @@ export default function AssetsPage() {
                         {a.purchase_date ? new Date(a.purchase_date).toLocaleDateString('es-ES') : '—'}
                       </td>
                       <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{a.purchase_order || '—'}</td>
-                      <td className="px-4 py-3 text-gray-300 whitespace-nowrap text-xs">{(a as any).linked_user_name || a.assigned_to || '—'}</td>
+                      <td className="px-4 py-3 text-gray-300 whitespace-nowrap text-xs">{a.assigned_to || '—'}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${statusColors[a.status] || ''}`}>
                           {statusLabels[a.status] || a.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-gray-400 whitespace-nowrap text-xs">{a.department || '—'}</td>
                       <td className="px-4 py-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-2">
                           <button onClick={() => { setEditAsset(a); setShowForm(true); }}
@@ -612,6 +673,82 @@ export default function AssetsPage() {
           </div>
         </div>
       )}
+
+      {/* Modal edición masiva */}
+      {bulkEditModal && (() => {
+        const BULK_FIELDS = [
+          { value: 'status',        label: 'Estado' },
+          { value: 'category',      label: 'Categoría' },
+          { value: 'assigned_to',   label: 'Asignado a' },
+          { value: 'purchase_order',label: 'Orden de compra' },
+          { value: 'notes',         label: 'Notas' },
+          { value: 'price',         label: 'Precio' },
+          { value: 'purchase_date', label: 'Fecha de compra' },
+        ];
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center">
+                  <Edit2 className="w-5 h-5 text-blue-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Edición masiva</h3>
+                  <p className="text-gray-500 text-xs">{selected.size} activo{selected.size > 1 ? 's' : ''} seleccionado{selected.size > 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1">Campo a modificar</label>
+                  <select value={bulkEditField} onChange={e => { setBulkEditField(e.target.value); setBulkEditValue(''); }}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+                    {BULK_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1">Nuevo valor</label>
+                  {bulkEditField === 'status' ? (
+                    <select value={bulkEditValue} onChange={e => setBulkEditValue(e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+                      <option value="">— Selecciona —</option>
+                      <option value="activo">Activo</option>
+                      <option value="inactivo">Inactivo</option>
+                      <option value="reparacion">En reparación</option>
+                      <option value="baja">Baja</option>
+                    </select>
+                  ) : bulkEditField === 'category' ? (
+                    <select value={bulkEditValue} onChange={e => setBulkEditValue(e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+                      <option value="">— Selecciona —</option>
+                      {categories.map(c => <option key={c.value} value={c.value}>{c.icon ? `${c.icon} ` : ''}{c.label}</option>)}
+                    </select>
+                  ) : bulkEditField === 'purchase_date' ? (
+                    <input type="date" value={bulkEditValue} onChange={e => setBulkEditValue(e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                  ) : bulkEditField === 'price' ? (
+                    <input type="number" min="0" step="0.01" value={bulkEditValue} onChange={e => setBulkEditValue(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
+                  ) : (
+                    <input type="text" value={bulkEditValue} onChange={e => setBulkEditValue(e.target.value)}
+                      placeholder={bulkEditField === 'assigned_to' ? 'Dejar vacío para desasignar' : 'Nuevo valor...'}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
+                  )}
+                </div>
+              </div>
+              <p className="text-yellow-500/70 text-xs mt-4">Se sobrescribirá el campo en los {selected.size} activos seleccionados.</p>
+              <div className="flex gap-3 mt-5">
+                <button onClick={() => setBulkEditModal(false)}
+                  className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm">Cancelar</button>
+                <button onClick={handleBulkEdit} disabled={bulkEditing || (!bulkEditValue && bulkEditField !== 'assigned_to')}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 disabled:text-blue-400 text-white rounded-lg text-sm font-medium">
+                  {bulkEditing ? 'Aplicando...' : 'Aplicar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal cambio de estado múltiple */}
       {bulkStatusModal && (
