@@ -3,7 +3,7 @@ import {
   Plus, Search, Pencil, Trash2, ChevronUp, ChevronDown,
   Filter, AlertTriangle, Package2, Link2, Link2Off,
   Users2, Monitor, X, Save, Key, Calendar, Hash, Loader2,
-  CheckSquare, Square, Download, Tag, Upload, Building2
+  CheckSquare, Square, Download, Tag, Edit2
 } from 'lucide-react';
 import Papa from 'papaparse';
 import toast from 'react-hot-toast';
@@ -15,7 +15,7 @@ import {
   getSoftwareList, createSoftware, updateSoftware, deleteSoftware,
   getSoftware, linkSoftwareAsset, unlinkSoftwareAsset,
   linkSoftwareUser, unlinkSoftwareUser,
-  getAssets, getClientUsers, apiClient
+  getAssets, getClientUsers
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Asset } from '../types';
@@ -47,7 +47,6 @@ const emptyForm = {
   license_key: '', license_type: 'perpetua' as SoftwareLicenseType,
   seats: 1, purchase_date: '', expiry_date: '',
   purchase_order: '', price: 0,
-  department: '',
   status: 'activo' as SoftwareStatus, notes: '',
 };
 
@@ -358,7 +357,6 @@ function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: Softw
         expiry_date: software.expiry_date?.slice(0, 10) || '',
         purchase_order: software.purchase_order || '',
         price: software.price, status: software.status, notes: software.notes || '',
-        department: software.department || '',
       });
       if (isEdit) {
         setLoadingDetail(true);
@@ -463,13 +461,8 @@ function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: Softw
                     className={ic() + ' pl-9'} />
                 </div>
               </Field>
-              <Field label="Departamento">
-                <input type="text" value={form.department}
-                  onChange={e => setForm(f => ({ ...f, department: e.target.value }))}
-                  placeholder="Ej: TI, RRHH, Contabilidad..." className={ic()} />
-              </Field>
               <div className="sm:col-span-2">
-              <Field label="Notas">
+                <Field label="Notas">
                   <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                     rows={3} placeholder="Observaciones adicionales..." className={ic() + ' resize-none'} />
                 </Field>
@@ -512,10 +505,8 @@ export default function SoftwarePage() {
   const [list, setList]               = useState<Software[]>([]);
   const [loading, setLoading]         = useState(true);
   const [search, setSearch]           = useState('');
-  const [filterStatus, setFilterStatus]   = useState('');
-  const [filterLicense, setFilterLicense] = useState('');
-  const [filterDept, setFilterDept]       = useState('');
-  const [importLoading, setImportLoading] = useState(false);
+  const [filterStatus, setFilterStatus]   = useState<Set<string>>(new Set());
+  const [filterLicense, setFilterLicense] = useState<Set<string>>(new Set());
   const [sortField, setSortField]     = useState<keyof Software>('name');
   const [sortDir, setSortDir]         = useState<'asc' | 'desc'>('asc');
   const [showForm, setShowForm]       = useState(false);
@@ -529,6 +520,10 @@ export default function SoftwarePage() {
   const [bulkDeleting, setBulkDeleting]   = useState(false);
   const [bulkStatusModal, setBulkStatusModal] = useState(false);
   const [bulkStatus, setBulkStatus]       = useState('activo');
+  const [bulkEditModal, setBulkEditModal] = useState(false);
+  const [bulkEditField, setBulkEditField] = useState('status');
+  const [bulkEditValue, setBulkEditValue] = useState('');
+  const [bulkEditing, setBulkEditing]     = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -536,7 +531,7 @@ export default function SoftwarePage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setSelected(new Set()); }, [search, filterStatus, filterLicense, filterDept]);
+  useEffect(() => { setSelected(new Set()); }, [search, filterStatus, filterLicense]);
 
   const handleSort = (f: keyof Software) => {
     if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -548,9 +543,8 @@ export default function SoftwarePage() {
       const q = search.toLowerCase();
       return (
         (!q || s.name.toLowerCase().includes(q) || s.vendor.toLowerCase().includes(q) || s.version?.toLowerCase().includes(q)) &&
-        (!filterStatus  || s.status       === filterStatus) &&
-        (!filterLicense || s.license_type === filterLicense) &&
-        (!filterDept    || s.department   === filterDept)
+        (!filterStatus.size  || filterStatus.has(s.status))       &&
+        (!filterLicense.size || filterLicense.has(s.license_type))
       );
     })
     .sort((a, b) => {
@@ -599,6 +593,20 @@ export default function SoftwarePage() {
     load();
   };
 
+  const handleBulkEdit = async () => {
+    setBulkEditing(true);
+    let ok = 0, fail = 0;
+    for (const id of selected) {
+      const sw = list.find(s => s.id === id);
+      if (!sw) continue;
+      try { await updateSoftware(id, { ...sw, [bulkEditField]: bulkEditValue }); ok++; } catch { fail++; }
+    }
+    setBulkEditing(false); setBulkEditModal(false); clearSelection();
+    if (ok > 0) toast.success(`Campo actualizado en ${ok} licencia${ok > 1 ? 's' : ''}`);
+    if (fail > 0) toast.error(`${fail} no se pudo${fail > 1 ? 'ron' : ''} actualizar`);
+    load();
+  };
+
   const handleBulkStatus = async () => {
     let ok = 0, fail = 0;
     for (const id of selected) {
@@ -628,46 +636,6 @@ export default function SoftwarePage() {
     setDeleting(true);
     try { await deleteSoftware(deleteModal.id); toast.success('Software eliminado'); setDeleteModal(null); load(); }
     catch { toast.error('Error al eliminar'); } finally { setDeleting(false); }
-  };
-
-  const deptOptions = [...new Set(list.map(s => s.department).filter(Boolean))].sort() as string[];
-
-  const handleDownloadTemplate = () => {
-    const example = [{ name: 'Microsoft Office 365', vendor: 'Microsoft', version: '2024',
-      license_type: 'suscripcion', seats: '10', purchase_date: '2024-01-15',
-      expiry_date: '2025-01-15', purchase_order: 'OC-2024-001', price: '1200.00',
-      department: 'TI', status: 'activo', notes: 'Licencia anual' }];
-    const csv = Papa.unparse({ fields: ['name','vendor','version','license_type','seats',
-      'purchase_date','expiry_date','purchase_order','price','department','status','notes'], data: example });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
-    a.download = 'plantilla_software.csv'; a.click();
-  };
-
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    setImportLoading(true);
-    Papa.parse<Record<string,string>>(file, {
-      header: true, skipEmptyLines: true,
-      complete: async (results) => {
-        const items = results.data.map(r => ({
-          name: r.name?.trim()||'', vendor: r.vendor?.trim()||'',
-          version: r.version?.trim()||'', license_type: r.license_type?.trim()||'perpetua',
-          seats: parseInt(r.seats)||1, purchase_date: r.purchase_date?.trim()||'',
-          expiry_date: r.expiry_date?.trim()||'', purchase_order: r.purchase_order?.trim()||'',
-          price: parseFloat(r.price)||0, department: r.department?.trim()||'',
-          status: r.status?.trim()||'activo', notes: r.notes?.trim()||'',
-        }));
-        try {
-          const res = await apiClient.post('/software/import', { items });
-          toast.success(`Importados: ${res.data.inserted} nuevos, ${res.data.updated} actualizados`);
-          load();
-        } catch (err: any) {
-          toast.error(err?.response?.data?.error || 'Error en la importación');
-        } finally { setImportLoading(false); e.target.value = ''; }
-      },
-      error: () => { toast.error('Error al leer el CSV'); setImportLoading(false); }
-    });
   };
 
   const SortIcon = ({ field }: { field: keyof Software }) =>
@@ -735,6 +703,10 @@ export default function SoftwarePage() {
                     <Trash2 className="w-3.5 h-3.5" /> Eliminar selección
                   </button>
                 )}
+                <button onClick={() => { setBulkEditField('status'); setBulkEditValue(''); setBulkEditModal(true); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-xs rounded-lg transition-colors">
+                  <Edit2 className="w-3.5 h-3.5" /> Edición masiva
+                </button>
               </>
             )}
           </div>
@@ -754,43 +726,48 @@ export default function SoftwarePage() {
               className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500" />
           </div>
           <div className="flex gap-2 flex-wrap">
-            <div className="relative">
-              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
-              <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-                className="bg-gray-800 border border-gray-700 rounded-lg pl-8 pr-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 appearance-none">
-                <option value="">Todos los estados</option>
-                {SW_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
-            </div>
-            <select value={filterLicense} onChange={e => setFilterLicense(e.target.value)}
-              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 appearance-none">
-              <option value="">Todos los tipos</option>
-              {LICENSE_TYPES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
-            </select>
-            {deptOptions.length > 0 && (
-              <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
-                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 appearance-none">
-                <option value="">Todos los departamentos</option>
-                {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-            )}
-            {(filterStatus || filterLicense || filterDept || search) && (
-              <button onClick={() => { setSearch(''); setFilterStatus(''); setFilterLicense(''); setFilterDept(''); }}
-                className="px-3 py-2 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors">
-                Limpiar
+            <div className="relative group">
+              <button className={`flex items-center gap-1.5 bg-gray-800 border ${filterStatus.size ? 'border-purple-500 text-purple-300' : 'border-gray-700 text-white'} rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none`}>
+                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+                {filterStatus.size ? `Estado (${filterStatus.size})` : 'Todos los estados'}
               </button>
-            )}
-            <div className="flex-1" />
-            <button onClick={handleDownloadTemplate} title="Descargar plantilla CSV"
-              className="flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm rounded-lg transition-colors">
-              <Download className="w-4 h-4" /> Plantilla
-            </button>
-            {canEdit && (
-              <label className={`flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm rounded-lg transition-colors cursor-pointer ${importLoading ? 'opacity-60 pointer-events-none' : ''}`}>
-                {importLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                Importar CSV
-                <input type="file" accept=".csv" className="hidden" onChange={handleImport} />
-              </label>
+              <div className="absolute z-30 top-full left-0 mt-1 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl min-w-[180px] p-2 hidden group-focus-within:block group-hover:block">
+                {SW_STATUSES.map(s => (
+                  <label key={s.value} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-800 rounded-lg cursor-pointer text-sm text-gray-300">
+                    <input type="checkbox" checked={filterStatus.has(s.value)}
+                      onChange={() => setFilterStatus(prev => { const n = new Set(prev); n.has(s.value) ? n.delete(s.value) : n.add(s.value); return n; })}
+                      className="rounded border-gray-600 bg-gray-700 text-purple-500 focus:ring-0" />
+                    {s.label}
+                  </label>
+                ))}
+                {filterStatus.size > 0 && (
+                  <button onClick={() => setFilterStatus(new Set())} className="w-full mt-1 px-3 py-1 text-xs text-gray-500 hover:text-white text-left">Limpiar</button>
+                )}
+              </div>
+            </div>
+            <div className="relative group">
+              <button className={`flex items-center gap-1.5 bg-gray-800 border ${filterLicense.size ? 'border-purple-500 text-purple-300' : 'border-gray-700 text-white'} rounded-lg px-3 py-2 text-sm focus:outline-none`}>
+                {filterLicense.size ? `Tipo (${filterLicense.size})` : 'Todos los tipos'}
+              </button>
+              <div className="absolute z-30 top-full left-0 mt-1 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl min-w-[180px] p-2 hidden group-focus-within:block group-hover:block">
+                {LICENSE_TYPES.map(l => (
+                  <label key={l.value} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-800 rounded-lg cursor-pointer text-sm text-gray-300">
+                    <input type="checkbox" checked={filterLicense.has(l.value)}
+                      onChange={() => setFilterLicense(prev => { const n = new Set(prev); n.has(l.value) ? n.delete(l.value) : n.add(l.value); return n; })}
+                      className="rounded border-gray-600 bg-gray-700 text-purple-500 focus:ring-0" />
+                    {l.label}
+                  </label>
+                ))}
+                {filterLicense.size > 0 && (
+                  <button onClick={() => setFilterLicense(new Set())} className="w-full mt-1 px-3 py-1 text-xs text-gray-500 hover:text-white text-left">Limpiar</button>
+                )}
+              </div>
+            </div>
+            {(filterStatus.size > 0 || filterLicense.size > 0 || search) && (
+              <button onClick={() => { setSearch(''); setFilterStatus(new Set()); setFilterLicense(new Set()); }}
+                className="px-3 py-2 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors">
+                Limpiar filtros
+              </button>
             )}
           </div>
         </div>
@@ -831,7 +808,6 @@ export default function SoftwarePage() {
                       <div className="flex items-center gap-1">{l}<SortIcon field={f} /></div>
                     </th>
                   ))}
-                  <th className="px-4 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">Departamento</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">Vínculos</th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-400">Acciones</th>
                 </tr>
@@ -877,7 +853,6 @@ export default function SoftwarePage() {
                           {getStatusLabel(sw.status)}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{sw.department || '—'}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-2 text-xs text-gray-500">
                           <span className="flex items-center gap-1"><Monitor className="w-3 h-3" />{(sw as Software & { asset_count?: number }).asset_count || 0}</span>
@@ -985,6 +960,81 @@ export default function SoftwarePage() {
           </div>
         </div>
       )}
+
+      {/* Modal edición masiva software */}
+      {bulkEditModal && (() => {
+        const SW_BULK_FIELDS = [
+          { value: 'status',         label: 'Estado' },
+          { value: 'license_type',   label: 'Tipo de licencia' },
+          { value: 'vendor',         label: 'Proveedor' },
+          { value: 'version',        label: 'Versión' },
+          { value: 'purchase_order', label: 'Orden de compra' },
+          { value: 'notes',          label: 'Notas' },
+          { value: 'price',          label: 'Precio' },
+          { value: 'purchase_date',  label: 'Fecha de compra' },
+          { value: 'expiry_date',    label: 'Fecha de expiración' },
+        ];
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center">
+                  <Edit2 className="w-5 h-5 text-purple-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Edición masiva</h3>
+                  <p className="text-gray-500 text-xs">{selected.size} licencia{selected.size > 1 ? 's' : ''} seleccionada{selected.size > 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1">Campo a modificar</label>
+                  <select value={bulkEditField} onChange={e => { setBulkEditField(e.target.value); setBulkEditValue(''); }}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500">
+                    {SW_BULK_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1">Nuevo valor</label>
+                  {bulkEditField === 'status' ? (
+                    <select value={bulkEditValue} onChange={e => setBulkEditValue(e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500">
+                      <option value="">— Selecciona —</option>
+                      {SW_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  ) : bulkEditField === 'license_type' ? (
+                    <select value={bulkEditValue} onChange={e => setBulkEditValue(e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500">
+                      <option value="">— Selecciona —</option>
+                      {LICENSE_TYPES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+                    </select>
+                  ) : (bulkEditField === 'purchase_date' || bulkEditField === 'expiry_date') ? (
+                    <input type="date" value={bulkEditValue} onChange={e => setBulkEditValue(e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500" />
+                  ) : bulkEditField === 'price' ? (
+                    <input type="number" min="0" step="0.01" value={bulkEditValue} onChange={e => setBulkEditValue(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" />
+                  ) : (
+                    <input type="text" value={bulkEditValue} onChange={e => setBulkEditValue(e.target.value)}
+                      placeholder="Nuevo valor..."
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" />
+                  )}
+                </div>
+              </div>
+              <p className="text-yellow-500/70 text-xs mt-4">Se sobrescribirá el campo en las {selected.size} licencias seleccionadas.</p>
+              <div className="flex gap-3 mt-5">
+                <button onClick={() => setBulkEditModal(false)}
+                  className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm">Cancelar</button>
+                <button onClick={handleBulkEdit} disabled={bulkEditing || !bulkEditValue}
+                  className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-purple-900 disabled:text-purple-400 text-white rounded-lg text-sm font-medium">
+                  {bulkEditing ? 'Aplicando...' : 'Aplicar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
