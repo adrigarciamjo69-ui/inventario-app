@@ -79,6 +79,19 @@ export default function AssetsPage() {
 
   const canEdit = user?.role === 'admin' || user?.role === 'editor';
 
+  // ── Dropdown open states ────────────────────────────────────────────────────
+  const [openDropdown, setOpenDropdown] = useState<'category' | 'status' | 'dept' | null>(null);
+  const toggleDropdown = (name: 'category' | 'status' | 'dept') =>
+    setOpenDropdown(prev => (prev === name ? null : name));
+
+  // Cerrar dropdown al hacer clic fuera
+  useEffect(() => {
+    if (!openDropdown) return;
+    const handler = () => setOpenDropdown(null);
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [openDropdown]);
+
   const load = useCallback(() => {
     setLoading(true);
     getAssets()
@@ -407,51 +420,141 @@ export default function AssetsPage() {
           />
         </div>
         <div className="flex flex-wrap gap-2 items-center">
-          {/* Categorías — multi */}
-          <div className="flex flex-wrap gap-1.5 items-center">
-            <span className="text-xs text-gray-500">Categoría:</span>
-            {categories.map(c => (
-              <button key={c.value} onClick={() => setFilterCategories(prev => {
-                const n = new Set(prev); n.has(c.value) ? n.delete(c.value) : n.add(c.value); return n;
-              })} className={`px-2 py-1 rounded-full text-xs border transition-colors ${
-                filterCategories.has(c.value)
-                  ? 'bg-blue-600 border-blue-500 text-white'
+          {/* Categoría — dropdown multiselect */}
+          <div className="relative">
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleDropdown('category'); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-colors ${
+                filterCategories.size > 0
+                  ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
                   : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
-              }`}>{c.icon} {c.label}</button>
-            ))}
+              }`}
+            >
+              <Filter className="w-3 h-3" />
+              Categoría{filterCategories.size > 0 ? ` (${filterCategories.size})` : ''}
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {openDropdown === 'category' && (
+              <div onClick={e => e.stopPropagation()} className="absolute top-full left-0 mt-1 z-30 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl py-1 min-w-[180px]">
+                {categories.map(c => (
+                  <button key={c.value}
+                    onClick={() => setFilterCategories(prev => {
+                      const n = new Set(prev); n.has(c.value) ? n.delete(c.value) : n.add(c.value); return n;
+                    })}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-800 transition-colors ${
+                      filterCategories.has(c.value) ? 'text-blue-400' : 'text-gray-300'
+                    }`}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center ${
+                      filterCategories.has(c.value) ? 'bg-blue-600 border-blue-500' : 'border-gray-600'
+                    }`}>
+                      {filterCategories.has(c.value) && <span className="text-white text-[9px]">✓</span>}
+                    </span>
+                    {c.icon} {c.label}
+                  </button>
+                ))}
+                {filterCategories.size > 0 && (
+                  <button onClick={() => setFilterCategories(new Set())}
+                    className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-gray-800 border-t border-gray-800 mt-1">
+                    Limpiar categoría
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-          {/* Estados — multi */}
-          <div className="flex flex-wrap gap-1.5 items-center">
-            <span className="text-xs text-gray-500">Estado:</span>
-            {[{v:'activo',l:'Activo'},{v:'inactivo',l:'Inactivo'},{v:'reparacion',l:'Reparación'},{v:'baja',l:'Baja'}].map(s => (
-              <button key={s.v} onClick={() => setFilterStatuses(prev => {
-                const n = new Set(prev); n.has(s.v) ? n.delete(s.v) : n.add(s.v); return n;
-              })} className={`px-2 py-1 rounded-full text-xs border transition-colors ${
-                filterStatuses.has(s.v)
-                  ? 'bg-blue-600 border-blue-500 text-white'
+
+          {/* Estado — dropdown multiselect */}
+          <div className="relative">
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleDropdown('status'); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-colors ${
+                filterStatuses.size > 0
+                  ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
                   : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
-              }`}>{s.l}</button>
-            ))}
+              }`}
+            >
+              <Filter className="w-3 h-3" />
+              Estado{filterStatuses.size > 0 ? ` (${filterStatuses.size})` : ''}
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {openDropdown === 'status' && (
+              <div onClick={e => e.stopPropagation()} className="absolute top-full left-0 mt-1 z-30 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl py-1 min-w-[160px]">
+                {[{v:'activo',l:'Activo'},{v:'inactivo',l:'Inactivo'},{v:'reparacion',l:'Reparación'},{v:'baja',l:'Baja'}].map(s => (
+                  <button key={s.v}
+                    onClick={() => setFilterStatuses(prev => {
+                      const n = new Set(prev); n.has(s.v) ? n.delete(s.v) : n.add(s.v); return n;
+                    })}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-800 transition-colors ${
+                      filterStatuses.has(s.v) ? 'text-blue-400' : 'text-gray-300'
+                    }`}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center ${
+                      filterStatuses.has(s.v) ? 'bg-blue-600 border-blue-500' : 'border-gray-600'
+                    }`}>
+                      {filterStatuses.has(s.v) && <span className="text-white text-[9px]">✓</span>}
+                    </span>
+                    {s.l}
+                  </button>
+                ))}
+                {filterStatuses.size > 0 && (
+                  <button onClick={() => setFilterStatuses(new Set())}
+                    className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-gray-800 border-t border-gray-800 mt-1">
+                    Limpiar estado
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-          {/* Departamentos — multi */}
-          {deptOptions.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 items-center">
-              <span className="text-xs text-gray-500">Dpto:</span>
-              {deptOptions.map(d => (
-                <button key={d} onClick={() => setFilterDepts(prev => {
-                  const n = new Set(prev); n.has(d) ? n.delete(d) : n.add(d); return n;
-                })} className={`px-2 py-1 rounded-full text-xs border transition-colors ${
-                  filterDepts.has(d)
-                    ? 'bg-blue-600 border-blue-500 text-white'
-                    : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
-                }`}>{d}</button>
-              ))}
-            </div>
-          )}
+
+          {/* Departamento — dropdown multiselect */}
+          <div className="relative">
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleDropdown('dept'); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-colors ${
+                filterDepts.size > 0
+                  ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
+                  : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
+              }`}
+            >
+              <Filter className="w-3 h-3" />
+              Departamento{filterDepts.size > 0 ? ` (${filterDepts.size})` : ''}
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {openDropdown === 'dept' && (
+              <div onClick={e => e.stopPropagation()} className="absolute top-full left-0 mt-1 z-30 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl py-1 min-w-[180px] max-h-60 overflow-y-auto">
+                {deptOptions.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-gray-500">Sin departamentos</p>
+                ) : deptOptions.map(d => (
+                  <button key={d}
+                    onClick={() => setFilterDepts(prev => {
+                      const n = new Set(prev); n.has(d) ? n.delete(d) : n.add(d); return n;
+                    })}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-800 transition-colors ${
+                      filterDepts.has(d) ? 'text-blue-400' : 'text-gray-300'
+                    }`}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center ${
+                      filterDepts.has(d) ? 'bg-blue-600 border-blue-500' : 'border-gray-600'
+                    }`}>
+                      {filterDepts.has(d) && <span className="text-white text-[9px]">✓</span>}
+                    </span>
+                    {d}
+                  </button>
+                ))}
+                {filterDepts.size > 0 && (
+                  <button onClick={() => setFilterDepts(new Set())}
+                    className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-gray-800 border-t border-gray-800 mt-1">
+                    Limpiar departamento
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
           {(filterCategories.size > 0 || filterStatuses.size > 0 || filterDepts.size > 0 || search) && (
-            <button onClick={() => { setSearch(''); setFilterCategories(new Set()); setFilterStatuses(new Set()); setFilterDepts(new Set()); }}
+            <button onClick={() => { setSearch(''); setFilterCategories(new Set()); setFilterStatuses(new Set()); setFilterDepts(new Set()); setOpenDropdown(null); }}
               className="px-3 py-1.5 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors flex items-center gap-1">
-              <X className="w-3 h-3" /> Limpiar
+              <X className="w-3 h-3" /> Limpiar todo
             </button>
           )}
           <div className="flex-1" />
@@ -511,6 +614,7 @@ export default function AssetsPage() {
                     { field: 'purchase_date' as SortField, label: 'F. Compra' },
                     { field: 'purchase_order' as SortField,label: 'Orden Compra' },
                     { field: 'assigned_to' as SortField,   label: 'Asignado a' },
+                    { field: 'department' as SortField,    label: 'Departamento' },
                     { field: 'status' as SortField,        label: 'Estado' },
                   ].map(({ field, label }) => (
                     <th key={field} onClick={() => handleSort(field)}
@@ -550,6 +654,7 @@ export default function AssetsPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{a.purchase_order || '—'}</td>
                       <td className="px-4 py-3 text-gray-300 whitespace-nowrap text-xs">{a.assigned_to || '—'}</td>
+                      <td className="px-4 py-3 text-gray-400 whitespace-nowrap text-xs">{a.department || '—'}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${statusColors[a.status] || ''}`}>
                           {statusLabels[a.status] || a.status}
