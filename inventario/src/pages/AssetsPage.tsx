@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Plus, Search, Download, Upload, Pencil, Trash2,
   ChevronUp, ChevronDown, Filter, FileDown, AlertTriangle, Package,
@@ -155,7 +155,25 @@ export default function AssetsPage() {
     }
   };
 
-  const toggleOne = (id: string) => {
+  const lastClickedId = useRef<string | null>(null);
+
+  const toggleOne = (id: string, shiftKey = false) => {
+    if (shiftKey && lastClickedId.current && lastClickedId.current !== id) {
+      const fromIdx = filteredIds.indexOf(lastClickedId.current);
+      const toIdx   = filteredIds.indexOf(id);
+      if (fromIdx !== -1 && toIdx !== -1) {
+        const [start, end] = fromIdx < toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx];
+        const rangeIds = filteredIds.slice(start, end + 1);
+        setSelected(prev => {
+          const n = new Set(prev);
+          rangeIds.forEach(rid => n.add(rid));
+          return n;
+        });
+        lastClickedId.current = id;
+        return;
+      }
+    }
+    lastClickedId.current = id;
     setSelected(prev => {
       const n = new Set(prev);
       if (n.has(id)) n.delete(id); else n.add(id);
@@ -163,7 +181,7 @@ export default function AssetsPage() {
     });
   };
 
-  const clearSelection = () => setSelected(new Set());
+  const clearSelection = () => { setSelected(new Set()); lastClickedId.current = null; };
 
   // ── Acciones masivas ────────────────────────────────────────────────────────
   const handleBulkExport = () => {
@@ -630,8 +648,8 @@ export default function AssetsPage() {
                   const isSelected = selected.has(a.id);
                   return (
                     <tr key={a.id}
-                      className={`hover:bg-gray-800/40 transition-colors cursor-pointer ${isSelected ? 'bg-blue-600/5' : ''}`}
-                      onClick={() => toggleOne(a.id)}
+                      className={`hover:bg-gray-800/40 transition-colors cursor-pointer select-none ${isSelected ? 'bg-blue-600/5' : ''}`}
+                      onClick={(e) => { if (e.shiftKey) e.preventDefault(); toggleOne(a.id, e.shiftKey); }}
                     >
                       {/* Checkbox fila */}
                       <td className="px-3 py-3">
