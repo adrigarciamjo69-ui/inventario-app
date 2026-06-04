@@ -45,6 +45,7 @@ export const createAsset = (data: object) => apiClient.post('/assets', data);
 export const updateAsset = (id: string, data: object) => apiClient.put(`/assets/${encodeURIComponent(id)}`, data);
 export const deleteAsset = (id: string) => apiClient.delete(`/assets/${encodeURIComponent(id)}`);
 export const importAssets = (data: object[]) => apiClient.post('/assets/import', { assets: data });
+export const relinkDeliveries = (id: string) => apiClient.post(`/assets/${encodeURIComponent(id)}/relink-deliveries`);
 
 // SOFTWARE
 export const getSoftwareList = () => apiClient.get('/software');
