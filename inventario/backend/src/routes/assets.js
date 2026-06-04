@@ -8,14 +8,7 @@ const VALID_STATUSES = ['activo', 'inactivo', 'reparacion', 'baja'];
 router.get('/', authenticate, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT a.*,
-        (SELECT cu.first_name || ' ' || cu.last_name
-         FROM asset_user_links aul
-         JOIN client_users cu ON cu.id = aul.client_user_id
-         WHERE aul.asset_id = a.id
-         ORDER BY aul.assigned_at DESC LIMIT 1) AS linked_user_name
-       FROM assets a
-       ORDER BY a.brand, a.model`
+      'SELECT * FROM assets ORDER BY brand, model'
     );
     res.json(rows);
   } catch (err) {
@@ -41,7 +34,7 @@ router.get('/:id', authenticate, async (req, res) => {
 
 // POST /api/assets
 router.post('/', authenticate, requireEditor, async (req, res) => {
-  const { id, serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, department, status, notes } = req.body;
+  const { id, serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, status, notes } = req.body;
   if (!id || !serial_number || !brand || !model) {
     return res.status(400).json({ error: 'ID interno, número de serie, marca y modelo son requeridos' });
   }
@@ -50,8 +43,8 @@ router.post('/', authenticate, requireEditor, async (req, res) => {
   }
   try {
     const { rows } = await pool.query(
-      `INSERT INTO assets (id, serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, department, status, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      `INSERT INTO assets (id, serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, status, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING *`,
       [
         id.trim(),
@@ -63,12 +56,20 @@ router.post('/', authenticate, requireEditor, async (req, res) => {
         purchase_date || null,
         purchase_order?.trim() || null,
         assigned_to?.trim() || null,
-        department?.trim() || null,
         status || 'activo',
         notes?.trim() || null
       ]
     );
-    res.status(201).json(rows[0]);
+
+    // Auto-vincular actas de entrega que tengan el mismo serial_number pero asset_id null
+    const { rowCount: linked } = await pool.query(
+      `UPDATE delivery_record_devices
+       SET asset_id = $1
+       WHERE serial_number = $2 AND (asset_id IS NULL OR asset_id = '')`,
+      [id.trim(), serial_number.trim()]
+    );
+
+    res.status(201).json({ ...rows[0], delivery_links_created: linked });
   } catch (err) {
     if (err.code === '23505') {
       if (err.constraint && err.constraint.includes('serial')) {
@@ -83,7 +84,7 @@ router.post('/', authenticate, requireEditor, async (req, res) => {
 
 // PUT /api/assets/:id
 router.put('/:id', authenticate, requireEditor, async (req, res) => {
-  const { serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, department, status, notes } = req.body;
+  const { serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, status, notes } = req.body;
   if (!serial_number || !brand || !model) {
     return res.status(400).json({ error: 'Número de serie, marca y modelo son requeridos' });
   }
@@ -92,17 +93,15 @@ router.put('/:id', authenticate, requireEditor, async (req, res) => {
       `UPDATE assets SET
         serial_number=$1, category=$2, brand=$3, model=$4, price=$5,
         purchase_date=$6, purchase_order=$7, assigned_to=$8,
-        department=$9, status=$10, notes=$11, updated_at=NOW()
-       WHERE id=$12
+        status=$9, notes=$10, updated_at=NOW()
+       WHERE id=$11
        RETURNING *`,
       [
         serial_number.trim(),
         category || 'other',
         brand.trim(), model.trim(), price || 0,
         purchase_date || null, purchase_order?.trim() || null,
-        assigned_to?.trim() || null,
-        department?.trim() || null,
-        status || 'activo',
+        assigned_to?.trim() || null, status || 'activo',
         notes?.trim() || null, req.params.id
       ]
     );
@@ -149,8 +148,8 @@ router.post('/import', authenticate, requireEditor, async (req, res) => {
       }
       try {
         const result = await client.query(
-          `INSERT INTO assets (id, serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, department, status, notes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          `INSERT INTO assets (id, serial_number, category, brand, model, price, purchase_date, purchase_order, assigned_to, status, notes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
            ON CONFLICT (id) DO UPDATE SET
              serial_number=EXCLUDED.serial_number,
              category=EXCLUDED.category, brand=EXCLUDED.brand,
@@ -158,7 +157,6 @@ router.post('/import', authenticate, requireEditor, async (req, res) => {
              purchase_date=EXCLUDED.purchase_date,
              purchase_order=EXCLUDED.purchase_order,
              assigned_to=EXCLUDED.assigned_to,
-             department=EXCLUDED.department,
              status=EXCLUDED.status, notes=EXCLUDED.notes,
              updated_at=NOW()
            RETURNING (xmax = 0) AS inserted`,
@@ -171,7 +169,6 @@ router.post('/import', authenticate, requireEditor, async (req, res) => {
             a.purchase_date || null,
             a.purchase_order?.trim() || null,
             a.assigned_to?.trim() || null,
-            a.department?.trim() || null,
             VALID_STATUSES.includes(a.status) ? a.status : 'activo',
             a.notes?.trim() || null
           ]
@@ -260,6 +257,24 @@ router.delete('/user-link/:linkId', authenticate, requireEditor, async (req, res
 
 module.exports = router;
 
+
+// POST /api/assets/:id/relink-deliveries — revincula actas que tengan el mismo serial_number
+router.post('/:id/relink-deliveries', authenticate, requireEditor, async (req, res) => {
+  try {
+    const { rows: asset } = await pool.query('SELECT id, serial_number FROM assets WHERE id = $1', [req.params.id]);
+    if (asset.length === 0) return res.status(404).json({ error: 'Activo no encontrado' });
+    const { rowCount: linked } = await pool.query(
+      `UPDATE delivery_record_devices
+       SET asset_id = $1
+       WHERE serial_number = $2 AND (asset_id IS NULL OR asset_id = '')`,
+      [asset[0].id, asset[0].serial_number]
+    );
+    res.json({ linked });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al revincular actas' });
+  }
+});
 
 // GET /api/assets/:id/deliveries — actas de entrega vinculadas a este activo
 router.get('/:id/deliveries', authenticate, async (req, res) => {
