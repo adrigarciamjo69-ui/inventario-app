@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, User, FileText, ExternalLink } from 'lucide-react';
+import { X, Save, User, FileText, RefreshCw } from 'lucide-react';
 import { Asset, AssetCategory, AssetStatus, ClientUser } from '../types';
 import DocumentsPanel from './DocumentsPanel';
 import AssetUsersPanel from './AssetUsersPanel';
 import { useCategories } from '../context/CategoriesContext';
-import { apiClient } from '../api/client';
+import { apiClient, relinkDeliveries } from '../api/client';
+import toast from 'react-hot-toast';
 
 const statuses: { value: AssetStatus; label: string }[] = [
   { value: 'activo',     label: 'Activo'        },
@@ -24,7 +25,6 @@ const emptyForm: Omit<Asset, 'created_at' | 'updated_at'> = {
   purchase_date:  '',
   purchase_order: '',
   assigned_to:    '',
-  department:     '',
   status:         'activo',
   notes:          '',
 };
@@ -52,7 +52,7 @@ function inputClass(errors: Record<string, string>, name: string) {
 // Definido FUERA de AssetForm para evitar desmontajes en cada re-render
 
 function AssignedToAutocomplete({ value, onChange, iClass }: {
-  value: string; onChange: (v: string) => void; iClass: string;
+  value: string; onChange: (name: string, department?: string) => void; iClass: string;
 }) {
   const [search, setSearch] = useState(value || '');
   const [results, setResults] = useState<ClientUser[]>([]);
@@ -88,7 +88,7 @@ function AssignedToAutocomplete({ value, onChange, iClass }: {
 
   const select = (u: ClientUser) => {
     const name = `${u.first_name} ${u.last_name}`;
-    setSearch(name); onChange(name); setOpen(false); setResults([]);
+    setSearch(name); onChange(name, u.department || ''); setOpen(false); setResults([]);
   };
 
   return (
@@ -150,13 +150,35 @@ interface DeliveryLink {
 function DeliveryRecordsPanel({ assetId }: { assetId: string }) {
   const [records, setRecords] = useState<DeliveryLink[]>([]);
   const [loading, setLoading] = useState(true);
+  const [relinking, setRelinking] = useState(false);
 
-  useEffect(() => {
+  const loadRecords = () => {
+    setLoading(true);
     apiClient.get(`/assets/${assetId}/deliveries`)
       .then(r => setRecords(r.data || []))
       .catch(() => setRecords([]))
       .finally(() => setLoading(false));
-  }, [assetId]);
+  };
+
+  useEffect(() => { loadRecords(); }, [assetId]);
+
+  const handleRelink = async () => {
+    setRelinking(true);
+    try {
+      const res = await relinkDeliveries(assetId);
+      const linked = res.data?.linked ?? 0;
+      if (linked > 0) {
+        toast.success(`${linked} acta${linked > 1 ? 's' : ''} vinculada${linked > 1 ? 's' : ''} correctamente`);
+        loadRecords();
+      } else {
+        toast('No hay actas pendientes de vincular para este número de serie', { icon: 'ℹ️' });
+      }
+    } catch {
+      toast.error('Error al revincular actas');
+    } finally {
+      setRelinking(false);
+    }
+  };
 
   if (loading) return (
     <div className="mt-5 flex items-center gap-2 text-xs text-gray-500">
@@ -173,6 +195,16 @@ function DeliveryRecordsPanel({ assetId }: { assetId: string }) {
         {records.length > 0 && (
           <span className="px-1.5 py-0.5 text-xs bg-blue-600/20 text-blue-400 rounded-full">{records.length}</span>
         )}
+        <button
+          type="button"
+          onClick={handleRelink}
+          disabled={relinking}
+          title="Buscar y vincular actas pendientes con este número de serie"
+          className="ml-auto flex items-center gap-1.5 px-2.5 py-1 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3 h-3 ${relinking ? 'animate-spin' : ''}`} />
+          Vincular actas pendientes
+        </button>
       </div>
 
       {records.length === 0 ? (
@@ -232,7 +264,6 @@ export default function AssetForm({ asset, onSave, onClose, isEdit }: AssetFormP
         purchase_date:  asset.purchase_date?.slice(0, 10) || '',
         purchase_order: asset.purchase_order || '',
         assigned_to:    asset.assigned_to    || '',
-        department:     asset.department     || '',
         status:         asset.status         || 'activo',
         notes:          asset.notes          || '',
       });
@@ -339,15 +370,20 @@ export default function AssetForm({ asset, onSave, onClose, isEdit }: AssetFormP
             <Field label="Asignado a" name="assigned_to">
               <AssignedToAutocomplete
                 value={form.assigned_to}
-                onChange={val => setForm(f => ({ ...f, assigned_to: val }))}
+                onChange={(name, department) => {
+                  setForm(f => ({
+                    ...f,
+                    assigned_to: name,
+                    ...(department !== undefined ? { _department_hint: department } : {}),
+                  }));
+                }}
                 iClass={iClass('assigned_to')}
               />
-            </Field>
-
-            <Field label="Departamento" name="department">
-              <input id="department" type="text" value={form.department}
-                onChange={e => setForm(f => ({ ...f, department: e.target.value }))}
-                placeholder="Ej: TI, RRHH, Contabilidad..." className={iClass('department')} />
+              {(form as typeof form & { _department_hint?: string })._department_hint && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Departamento: <span className="text-gray-300">{(form as typeof form & { _department_hint?: string })._department_hint}</span>
+                </p>
+              )}
             </Field>
 
             <div className="col-span-1 sm:col-span-2 lg:col-span-3">
