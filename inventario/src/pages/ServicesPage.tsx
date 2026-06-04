@@ -5,6 +5,7 @@ import {
   ChevronUp, ChevronDown, Filter, Upload, Download
 } from 'lucide-react';
 import Papa from 'papaparse';
+import BulkEditModal from '../components/BulkEditModal';
 import toast from 'react-hot-toast';
 import { apiClient } from '../api/client';
 import { Service, ServiceStatus, BillingCycle } from '../types';
@@ -163,9 +164,10 @@ export default function ServicesPage() {
   const [services, setServices]   = useState<Service[]>([]);
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [filterDept, setFilterDept] = useState('');
+  const [filterStatuses, setFilterStatuses]   = useState<Set<string>>(new Set());
+  const [filterCategories, setFilterCategories] = useState<Set<string>>(new Set());
+  const [filterDepts, setFilterDepts]         = useState<Set<string>>(new Set());
+  const [bulkEditModal, setBulkEditModal]     = useState(false);
   const [showForm, setShowForm]   = useState(false);
   const [editSvc, setEditSvc]     = useState<Service | undefined>();
   const [selected, setSelected]   = useState<Set<number>>(new Set());
@@ -184,13 +186,16 @@ export default function ServicesPage() {
   const departments = [...new Set(services.map(s => s.department).filter(Boolean))] as string[];
   const categories  = [...new Set(services.map(s => s.category).filter(Boolean))] as string[];
 
+  const deptOptions   = [...new Set(services.map(s => s.department).filter(Boolean))].sort() as string[];
+  const catOptions    = [...new Set(services.map(s => s.category).filter(Boolean))].sort() as string[];
+
   const filtered = services
     .filter(s => {
       const q = search.toLowerCase();
       return (!q || s.name.toLowerCase().includes(q) || s.provider.toLowerCase().includes(q) || s.category.toLowerCase().includes(q))
-        && (!filterStatus || s.status === filterStatus)
-        && (!filterCategory || s.category === filterCategory)
-        && (!filterDept || s.department === filterDept);
+        && (filterStatuses.size   === 0 || filterStatuses.has(s.status))
+        && (filterCategories.size === 0 || filterCategories.has(s.category))
+        && (filterDepts.size      === 0 || filterDepts.has(s.department || ''));
     })
     .sort((a, b) => {
       const va = String(a[sortField] ?? '').toLowerCase();
@@ -336,52 +341,69 @@ export default function ServicesPage() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-48">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-          <input className="w-full bg-gray-900 border border-gray-800 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-            placeholder="Buscar servicios..." value={search} onChange={e => setSearch(e.target.value)} />
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="relative flex-1 min-w-48">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+            <input className="w-full bg-gray-900 border border-gray-800 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+              placeholder="Buscar servicios..." value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <button onClick={load} className="p-2 bg-gray-900 border border-gray-800 rounded-lg text-gray-400 hover:text-white transition-colors">
+            <RefreshCw className="w-4 h-4" />
+          </button>
+          <button onClick={handleDownloadTemplate} className="flex items-center gap-1.5 px-3 py-2 bg-gray-900 border border-gray-800 text-gray-400 hover:text-white text-sm rounded-lg transition-colors">
+            <Download className="w-4 h-4" /> Plantilla
+          </button>
+          {canEdit && (
+            <label className={`flex items-center gap-1.5 px-3 py-2 bg-gray-900 border border-gray-800 text-gray-400 hover:text-white text-sm rounded-lg transition-colors cursor-pointer ${importLoading ? 'opacity-60 pointer-events-none' : ''}`}>
+              {importLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              Importar CSV
+              <input type="file" accept=".csv" className="hidden" onChange={handleImport} />
+            </label>
+          )}
         </div>
-        <select className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-blue-500"
-          value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-          <option value="">Todos los estados</option>
-          {SERVICE_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
-        <select className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-blue-500"
-          value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
-          <option value="">Todas las categorías</option>
-          {categories.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        {departments.length > 0 && (
-          <select className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-blue-500"
-            value={filterDept} onChange={e => setFilterDept(e.target.value)}>
-            <option value="">Todos los departamentos</option>
-            {departments.map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
-        )}
-        <button onClick={load} className="p-2 bg-gray-900 border border-gray-800 rounded-lg text-gray-400 hover:text-white transition-colors">
-          <RefreshCw className="w-4 h-4" />
-        </button>
-        <button onClick={handleDownloadTemplate} title="Descargar plantilla CSV"
-          className="flex items-center gap-1.5 px-3 py-2 bg-gray-900 border border-gray-800 text-gray-400 hover:text-white text-sm rounded-lg transition-colors">
-          <Download className="w-4 h-4" /> Plantilla
-        </button>
-        {canEdit && (
-          <label className={`flex items-center gap-1.5 px-3 py-2 bg-gray-900 border border-gray-800 text-gray-400 hover:text-white text-sm rounded-lg transition-colors cursor-pointer ${importLoading ? 'opacity-60 pointer-events-none' : ''}`}>
-            {importLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            Importar CSV
-            <input type="file" accept=".csv" className="hidden" onChange={handleImport} />
-          </label>
-        )}
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <span className="text-xs text-gray-500">Estado:</span>
+          {SERVICE_STATUSES.map(s => (
+            <button key={s.value} onClick={() => setFilterStatuses(prev => { const n=new Set(prev); n.has(s.value)?n.delete(s.value):n.add(s.value); return n; })}
+              className={`px-2 py-1 rounded-full text-xs border transition-colors ${filterStatuses.has(s.value) ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-900 border-gray-800 text-gray-400 hover:text-white'}`}>
+              {s.label}
+            </button>
+          ))}
+          {catOptions.length > 0 && <span className="text-xs text-gray-500 ml-2">Categoría:</span>}
+          {catOptions.map(c => (
+            <button key={c} onClick={() => setFilterCategories(prev => { const n=new Set(prev); n.has(c)?n.delete(c):n.add(c); return n; })}
+              className={`px-2 py-1 rounded-full text-xs border transition-colors ${filterCategories.has(c) ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-900 border-gray-800 text-gray-400 hover:text-white'}`}>
+              {c}
+            </button>
+          ))}
+          {deptOptions.length > 0 && <span className="text-xs text-gray-500 ml-2">Dpto:</span>}
+          {deptOptions.map(d => (
+            <button key={d} onClick={() => setFilterDepts(prev => { const n=new Set(prev); n.has(d)?n.delete(d):n.add(d); return n; })}
+              className={`px-2 py-1 rounded-full text-xs border transition-colors ${filterDepts.has(d) ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-900 border-gray-800 text-gray-400 hover:text-white'}`}>
+              {d}
+            </button>
+          ))}
+          {(filterStatuses.size>0||filterCategories.size>0||filterDepts.size>0||search) && (
+            <button onClick={() => { setSearch(''); setFilterStatuses(new Set()); setFilterCategories(new Set()); setFilterDepts(new Set()); }}
+              className="px-2 py-1 text-xs text-gray-400 hover:text-white border border-gray-700 bg-gray-900 rounded-full transition-colors flex items-center gap-1">
+              <X className="w-3 h-3" /> Limpiar
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Bulk delete */}
+      {/* Bulk actions */}
       {selected.size > 0 && canEdit && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
-          <span className="text-sm text-red-300">{selected.size} seleccionado(s)</span>
+        <div className="flex items-center gap-3 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg">
+          <span className="text-sm text-gray-300">{selected.size} seleccionado(s)</span>
+          <button onClick={() => setBulkEditModal(true)}
+            className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors">
+            <Pencil className="w-3 h-3" /> Edición masiva
+          </button>
           <button onClick={handleBulkDelete} disabled={deleting}
             className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition-colors ml-auto">
-            {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />} Eliminar selección
+            {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />} Eliminar
           </button>
         </div>
       )}
@@ -489,6 +511,34 @@ export default function ServicesPage() {
         )}
       </div>
 
+      {bulkEditModal && (
+        <BulkEditModal
+          title="Servicios"
+          count={[...selected].filter(id => filtered.some(s => s.id === id)).length}
+          fields={[
+            { key:'status', label:'Estado', type:'select', options: SERVICE_STATUSES.map(s=>({value:s.value,label:s.label})) },
+            { key:'department', label:'Departamento', type:'text', placeholder:'TI, RRHH...' },
+            { key:'provider', label:'Proveedor', type:'text', placeholder:'Google, AWS...' },
+            { key:'billing_cycle', label:'Ciclo de facturación', type:'select', options:[
+              {value:'mensual',label:'Mensual'},{value:'anual',label:'Anual'},
+              {value:'unico',label:'Pago único'},{value:'gratuito',label:'Gratuito'}
+            ]},
+            { key:'notes', label:'Notas', type:'textarea', placeholder:'Observaciones...' },
+          ]}
+          onSave={async (fields) => {
+            let ok=0, fail=0;
+            for (const id of selected) {
+              const svc = services.find(s => s.id === id); if (!svc) continue;
+              try { await apiClient.put(`/services/${id}`, { ...svc, ...fields }); ok++; } catch { fail++; }
+            }
+            setBulkEditModal(false); setSelected(new Set());
+            if(ok>0) toast.success(`${ok} actualizado${ok>1?'s':''}`);
+            if(fail>0) toast.error(`${fail} error${fail>1?'es':''}`);
+            load();
+          }}
+          onClose={() => setBulkEditModal(false)}
+        />
+      )}
       {showForm && (
         <ServiceForm
           service={editSvc}
