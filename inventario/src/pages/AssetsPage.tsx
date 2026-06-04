@@ -653,14 +653,14 @@ export default function AssetsPage() {
                     <tr key={a.id}
                       className={`hover:bg-gray-800/40 transition-colors cursor-pointer select-none ${isSelected ? 'bg-blue-600/5' : ''}`}
                       onClick={(e) => {
-                        if ((e.target as HTMLElement).closest('td:last-child')) return;
+                        if ((e.target as HTMLElement).closest('button')) return;
                         if (e.shiftKey) e.preventDefault();
                         toggleOne(a.id, e.shiftKey);
                       }}
                     >
-                      {/* Checkbox fila — no llama a toggleOne, el tr lo gestiona */}
+                      {/* Checkbox fila */}
                       <td className="px-3 py-3">
-                        <Checkbox checked={isSelected} onChange={() => {}} />
+                        <Checkbox checked={isSelected} onChange={() => toggleOne(a.id)} />
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-blue-400 whitespace-nowrap font-medium">{a.id}</td>
                       <td className="px-4 py-3 font-mono text-xs text-gray-300 whitespace-nowrap">{a.serial_number}</td>
