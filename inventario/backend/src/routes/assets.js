@@ -60,16 +60,18 @@ router.post('/', authenticate, requireEditor, async (req, res) => {
         notes?.trim() || null
       ]
     );
+    const newAsset = rows[0];
 
-    // Auto-vincular actas de entrega que tengan el mismo serial_number pero asset_id null
-    const { rowCount: linked } = await pool.query(
-      `UPDATE delivery_record_devices
-       SET asset_id = $1
-       WHERE serial_number = $2 AND (asset_id IS NULL OR asset_id = '')`,
-      [id.trim(), serial_number.trim()]
-    );
+    // Auto-vincular actas de entrega que referencien este serial_number
+    try {
+      await pool.query(
+        `UPDATE delivery_record_devices SET asset_id = $1
+         WHERE serial_number = $2 AND asset_id IS NULL`,
+        [newAsset.id, serial_number.trim()]
+      );
+    } catch (_) { /* non-fatal */ }
 
-    res.status(201).json({ ...rows[0], delivery_links_created: linked });
+    res.status(201).json(newAsset);
   } catch (err) {
     if (err.code === '23505') {
       if (err.constraint && err.constraint.includes('serial')) {
@@ -258,24 +260,6 @@ router.delete('/user-link/:linkId', authenticate, requireEditor, async (req, res
 module.exports = router;
 
 
-// POST /api/assets/:id/relink-deliveries — revincula actas que tengan el mismo serial_number
-router.post('/:id/relink-deliveries', authenticate, requireEditor, async (req, res) => {
-  try {
-    const { rows: asset } = await pool.query('SELECT id, serial_number FROM assets WHERE id = $1', [req.params.id]);
-    if (asset.length === 0) return res.status(404).json({ error: 'Activo no encontrado' });
-    const { rowCount: linked } = await pool.query(
-      `UPDATE delivery_record_devices
-       SET asset_id = $1
-       WHERE serial_number = $2 AND (asset_id IS NULL OR asset_id = '')`,
-      [asset[0].id, asset[0].serial_number]
-    );
-    res.json({ linked });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error al revincular actas' });
-  }
-});
-
 // GET /api/assets/:id/deliveries — actas de entrega vinculadas a este activo
 router.get('/:id/deliveries', authenticate, async (req, res) => {
   try {
@@ -293,5 +277,68 @@ router.get('/:id/deliveries', authenticate, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al obtener actas vinculadas' });
+  }
+});
+
+// POST /api/assets/:id/auto-link-deliveries
+// Busca actas con el mismo serial_number y vincula el asset si no está vinculado
+router.post('/:id/auto-link-deliveries', authenticate, requireEditor, async (req, res) => {
+  const { id } = req.params;
+  const client = await pool.connect();
+  try {
+    // Get asset serial number
+    const { rows: assetRows } = await client.query(
+      'SELECT serial_number FROM assets WHERE id = $1', [id]
+    );
+    if (!assetRows.length) return res.status(404).json({ error: 'Activo no encontrado' });
+    const { serial_number } = assetRows[0];
+
+    // Find delivery_record_devices that match by serial_number but have NULL asset_id
+    // OR delivery records that reference this asset_id but aren't yet linked in asset_user_links
+    const { rows: pendingRows } = await client.query(`
+      SELECT DISTINCT drd.id AS drd_id, dr.id AS dr_id, dr.client_user_id
+      FROM delivery_record_devices drd
+      JOIN delivery_records dr ON dr.id = drd.delivery_record_id
+      WHERE (drd.serial_number = $1 OR drd.asset_id = $2)
+        AND drd.asset_id IS NULL
+    `, [serial_number, id]);
+
+    // Also update device rows where serial matches but asset_id is null
+    const { rowCount: updatedDevices } = await client.query(`
+      UPDATE delivery_record_devices
+      SET asset_id = $1
+      WHERE serial_number = $2 AND asset_id IS NULL
+    `, [id, serial_number]);
+
+    // Create asset_user_links for deliveries with a client_user that don't have one yet
+    const { rows: linkRows } = await client.query(`
+      SELECT DISTINCT dr.client_user_id
+      FROM delivery_records dr
+      JOIN delivery_record_devices drd ON drd.delivery_record_id = dr.id
+      WHERE (drd.asset_id = $1 OR drd.serial_number = $2)
+        AND dr.client_user_id IS NOT NULL
+        AND dr.type = 'entrega'
+        AND NOT EXISTS (
+          SELECT 1 FROM asset_user_links aul
+          WHERE aul.asset_id = $1 AND aul.client_user_id = dr.client_user_id
+        )
+    `, [id, serial_number]);
+
+    let linked = 0;
+    for (const row of linkRows) {
+      await client.query(
+        `INSERT INTO asset_user_links (asset_id, client_user_id, link_type, assigned_at)
+         VALUES ($1, $2, 'asignado', NOW()) ON CONFLICT DO NOTHING`,
+        [id, row.client_user_id]
+      );
+      linked++;
+    }
+
+    res.json({ linked, updated_devices: updatedDevices });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al vincular actas' });
+  } finally {
+    client.release();
   }
 });
