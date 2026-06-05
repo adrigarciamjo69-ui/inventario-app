@@ -802,7 +802,13 @@ export default function SettingsPage() {
                     <label className={lbl}>Usuario de lectura (Bind DN) *</label>
                     <input className={inp} value={ldapConfig.bind_dn}
                       onChange={e => setLdapConfig(c => ({ ...c, bind_dn: e.target.value }))}
-                      placeholder="CN=ldap-reader,CN=Users,DC=electrans,DC=es" />
+                      placeholder="agarcia@electrans.local" />
+                    <p className="text-xs text-gray-600 mt-1">
+                      Formatos válidos:{' '}
+                      <code className="text-blue-400">usuario@dominio.local</code> (recomendado) ·{' '}
+                      <code className="text-blue-400">dominio\usuario</code> ·{' '}
+                      <code className="text-blue-400">CN=Nombre,OU=Users,DC=dominio,DC=local</code>
+                    </p>
                   </div>
                   <div>
                     <label className={lbl}>Contraseña del usuario *</label>
