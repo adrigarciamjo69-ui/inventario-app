@@ -33,6 +33,7 @@ app.use('/api/client-users', require('./routes/client-users'));
 app.use('/api/system', require('./routes/system'));
 app.use('/api/settings',   require('./routes/settings'));
 app.use('/api/deliveries', require('./routes/deliveries'));
+app.use('/api/services',   require('./routes/services'));
 app.use('/api/ldap',       require('./routes/ldap'));
 
 // 404
