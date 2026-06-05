@@ -31,9 +31,9 @@ app.use('/api/floorplan', require('./routes/floorplan-images'));
 app.use('/api/floorplan', require('./routes/floorplan'));
 app.use('/api/client-users', require('./routes/client-users'));
 app.use('/api/system', require('./routes/system'));
-app.use('/api/settings', require('./routes/settings'));
-app.use('/api/services', require('./routes/services'));
+app.use('/api/settings',   require('./routes/settings'));
 app.use('/api/deliveries', require('./routes/deliveries'));
+app.use('/api/ldap',       require('./routes/ldap'));
 
 // 404
 app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
@@ -57,7 +57,6 @@ async function initDB() {
         password_hash VARCHAR(255) NOT NULL,
         role VARCHAR(20) NOT NULL DEFAULT 'viewer' CHECK (role IN ('admin','editor','viewer')),
         active BOOLEAN NOT NULL DEFAULT true,
-        preferences JSONB NOT NULL DEFAULT '{}',
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
@@ -71,7 +70,6 @@ async function initDB() {
         purchase_date DATE,
         purchase_order VARCHAR(100),
         assigned_to VARCHAR(150),
-        department VARCHAR(100),
         status VARCHAR(20) NOT NULL DEFAULT 'activo' CHECK (status IN ('activo','inactivo','reparacion','baja')),
         notes TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -117,28 +115,8 @@ async function initDB() {
         expiry_date DATE,
         purchase_order VARCHAR(100),
         price NUMERIC(12,2) NOT NULL DEFAULT 0,
-        department VARCHAR(100),
         status VARCHAR(20) NOT NULL DEFAULT 'activo'
           CHECK (status IN ('activo','inactivo','expirado','baja')),
-        notes TEXT,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS services (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(200) NOT NULL,
-        provider VARCHAR(150) NOT NULL DEFAULT '',
-        category VARCHAR(100) NOT NULL DEFAULT 'otros',
-        url VARCHAR(500),
-        account VARCHAR(200),
-        department VARCHAR(100),
-        cost NUMERIC(12,2) NOT NULL DEFAULT 0,
-        billing_cycle VARCHAR(30) NOT NULL DEFAULT 'mensual'
-          CHECK (billing_cycle IN ('mensual','anual','unico','gratuito')),
-        renewal_date DATE,
-        status VARCHAR(20) NOT NULL DEFAULT 'activo'
-          CHECK (status IN ('activo','inactivo','cancelado','pendiente')),
         notes TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -198,38 +176,6 @@ async function initDB() {
         notes TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
-
-      CREATE TABLE IF NOT EXISTS app_settings (
-        key VARCHAR(100) PRIMARY KEY,
-        value TEXT NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS delivery_records (
-        id SERIAL PRIMARY KEY,
-        doc_id VARCHAR(50) UNIQUE NOT NULL,
-        type VARCHAR(20) NOT NULL DEFAULT 'entrega' CHECK (type IN ('entrega','devolucion')),
-        client_user_id INTEGER REFERENCES client_users(id) ON DELETE SET NULL,
-        recipient_name VARCHAR(200),
-        recipient_dni VARCHAR(50),
-        delivery_date DATE NOT NULL,
-        responsible VARCHAR(150),
-        notes TEXT,
-        status VARCHAR(20) NOT NULL DEFAULT 'pendiente' CHECK (status IN ('pendiente','entregado','devuelto','cancelado')),
-        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS delivery_record_devices (
-        id SERIAL PRIMARY KEY,
-        delivery_record_id INTEGER NOT NULL REFERENCES delivery_records(id) ON DELETE CASCADE,
-        asset_id VARCHAR(50) REFERENCES assets(id) ON DELETE SET NULL,
-        device_type VARCHAR(100),
-        model VARCHAR(200),
-        serial_number VARCHAR(150),
-        observations TEXT
-      );
     `);
 
     // Create default admin if no users exist
@@ -273,11 +219,9 @@ async function initDB() {
 
     console.log('✅ Base de datos inicializada correctamente');
 
-    // Migraciones: añadir columnas nuevas si no existen
+    // Migraciones no destructivas
     await client.query(`
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}';
-      ALTER TABLE assets ADD COLUMN IF NOT EXISTS department VARCHAR(100);
-      ALTER TABLE software ADD COLUMN IF NOT EXISTS department VARCHAR(100);
+      ALTER TABLE client_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
     `);
   } finally {
     client.release();
@@ -288,6 +232,39 @@ initDB()
   .then(() => {
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 Servidor iniciado en puerto ${PORT}`);
+
+      // ── Cron: sync LDAP todos los días a las 12:00 ────────────────────────
+      try {
+        const cron         = require('node-cron');
+        const { runSync }  = require('./ldap-sync');
+        const { pool: p }  = require('./db');
+
+        // Load LDAP config from DB into env at startup
+        p.query(`SELECT value FROM app_settings WHERE key = 'ldap_config'`)
+          .then(({ rows }) => {
+            if (!rows.length) return;
+            try {
+              const cfg = JSON.parse(rows[0].value);
+              if (!process.env.LDAP_URL)       process.env.LDAP_URL       = cfg.url;
+              if (!process.env.LDAP_BIND_DN)   process.env.LDAP_BIND_DN   = cfg.bind_dn;
+              if (!process.env.LDAP_BIND_PASS) process.env.LDAP_BIND_PASS = cfg.bind_pass;
+              if (!process.env.LDAP_BASE_DN)   process.env.LDAP_BASE_DN   = cfg.base_dn;
+              if (cfg.filter)                  process.env.LDAP_FILTER     = cfg.filter;
+              console.log('🔗 Configuración LDAP cargada desde BD');
+            } catch (_) {}
+          }).catch(() => {});
+
+        // Schedule daily sync at 12:00
+        cron.schedule('0 12 * * *', () => {
+          console.log('⏰ Cron: iniciando sync LDAP diario (12:00)');
+          runSync().catch(err => console.error('Cron LDAP error:', err.message));
+        }, { timezone: 'Europe/Madrid' });
+
+        console.log('⏰ Cron LDAP programado: todos los días a las 12:00 (Europa/Madrid)');
+      } catch (_) {
+        // node-cron or ldap not installed — skip cron silently
+      }
+    });
     });
   })
   .catch((err) => {
