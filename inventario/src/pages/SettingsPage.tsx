@@ -830,9 +830,9 @@ export default function SettingsPage() {
                         const r = await apiClient.post('/ldap/test', {
                           url: ldapConfig.url, bind_dn: ldapConfig.bind_dn, bind_pass: ldapConfig.bind_pass
                         });
-                        setLdapTestResult({ ok: true, message: r.data.message });
-                      } catch (e: any) {
-                        setLdapTestResult({ ok: false, message: e?.response?.data?.error || 'Error de conexión' });
+                        setLdapTestResult({ ok: r.data.ok, message: r.data.ok ? r.data.message : r.data.error });
+                      } catch {
+                        setLdapTestResult({ ok: false, message: 'Error inesperado al contactar el servidor' });
                       } finally { setLdapTesting(false); }
                     }}
                     className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-700 text-gray-300 hover:text-white hover:border-gray-600 rounded-lg transition-colors disabled:opacity-50"
@@ -862,11 +862,15 @@ export default function SettingsPage() {
                       setLdapSyncing(true); setLdapSyncResult(null);
                       try {
                         const r = await apiClient.post('/ldap/sync');
-                        setLdapSyncResult(r.data);
-                        toast.success(`Sync completado: ${r.data.inserted} nuevos, ${r.data.updated} actualizados`);
-                        apiClient.get('/ldap/status').then(s => setLdapStatus(s.data)).catch(() => {});
-                      } catch (e: any) {
-                        toast.error(e?.response?.data?.error || 'Error en la sincronización');
+                        if (r.data.ok === false) {
+                          toast.error(r.data.error || 'Error en la sincronización');
+                        } else {
+                          setLdapSyncResult(r.data);
+                          toast.success(`Sync completado: ${r.data.inserted} nuevos, ${r.data.updated} actualizados`);
+                          apiClient.get('/ldap/status').then(s => setLdapStatus(s.data)).catch(() => {});
+                        }
+                      } catch {
+                        toast.error('Error inesperado durante la sincronización');
                       } finally { setLdapSyncing(false); }
                     }}
                     className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 ml-auto"
