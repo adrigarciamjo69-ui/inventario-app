@@ -3,7 +3,7 @@ import {
   Building2, FileText, RotateCcw, Save, Plus, Trash2,
   Upload, X, Settings, Palette, AlignLeft, ChevronRight,
   Tag, Users, HardDrive, Database, AlertTriangle, RefreshCw,
-  ExternalLink, Link2, Globe
+  ExternalLink, Link2, Globe, Network, CheckCircle, XCircle, Loader2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { apiClient } from '../api/client';
@@ -392,7 +392,7 @@ function StoragePanel() {
 
 // ── Main SettingsPage ─────────────────────────────────────────────────────────
 
-type Section = 'empresa' | 'entrega' | 'devolucion' | 'categories' | 'users' | 'storage' | 'quicklinks';
+type Section = 'empresa' | 'entrega' | 'devolucion' | 'categories' | 'users' | 'storage' | 'quicklinks' | 'ldap';
 type DocTab = 'pdf' | 'clausulas';
 
 export default function SettingsPage() {
@@ -408,6 +408,19 @@ export default function SettingsPage() {
   const [clauses, setClauses] = useState({ entrega: DEFAULT_CLAUSES_ENTREGA, devolucion: DEFAULT_CLAUSES_DEVOLUCION });
   const [quickLinks, setQuickLinks] = useState<QuickLink[]>([]);
 
+  // ── LDAP state ──────────────────────────────────────────────────────────────
+  const [ldapConfig, setLdapConfig] = useState({
+    url: '', bind_dn: '', bind_pass: '', base_dn: '',
+    filter: '(&(objectClass=person)(mail=*)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))',
+  });
+  const [ldapStatus, setLdapStatus] = useState<{
+    configured: boolean; last_sync: string | null; total_users: number;
+  } | null>(null);
+  const [ldapTesting, setLdapTesting]   = useState(false);
+  const [ldapSyncing, setLdapSyncing]   = useState(false);
+  const [ldapTestResult, setLdapTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [ldapSyncResult, setLdapSyncResult] = useState<{ inserted: number; updated: number; total: number } | null>(null);
+
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -420,6 +433,12 @@ export default function SettingsPage() {
       if (s.pdfStyle)     setPdfStyle(p => ({ entrega: { ...DEFAULT_PDF_STYLE, ...s.pdfStyle?.entrega }, devolucion: { ...DEFAULT_PDF_STYLE_DEV, ...s.pdfStyle?.devolucion } }));
       if (s.clauses)      setClauses(c => ({ entrega: s.clauses?.entrega || DEFAULT_CLAUSES_ENTREGA, devolucion: s.clauses?.devolucion || DEFAULT_CLAUSES_DEVOLUCION }));
       if (s.quickLinks)   setQuickLinks(s.quickLinks);
+
+      // Load LDAP status
+      apiClient.get('/ldap/status').then(r => {
+        setLdapStatus(r.data);
+        if (r.data.config) setLdapConfig(c => ({ ...c, ...r.data.config, bind_pass: '' }));
+      }).catch(() => {});
     } catch { /* first time, use defaults */ }
     finally { setLoading(false); }
   }, []);
@@ -457,6 +476,7 @@ export default function SettingsPage() {
     { id: 'categories', label: 'Categorías',     icon: <Tag className="w-4 h-4" />, separator: true },
     { id: 'users',      label: 'Usuarios App',   icon: <Users className="w-4 h-4" /> },
     { id: 'quicklinks', label: 'Accesos rápidos', icon: <ExternalLink className="w-4 h-4" /> },
+    { id: 'ldap',       label: 'Active Directory', icon: <Network className="w-4 h-4" />, separator: true },
     { id: 'storage',    label: 'Almacenamiento', icon: <HardDrive className="w-4 h-4" />, separator: true },
   ];
 
@@ -729,6 +749,180 @@ export default function SettingsPage() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── ACTIVE DIRECTORY / LDAP ── */}
+          {section === 'ldap' && (
+            <div className="space-y-4">
+
+              {/* Status card */}
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-9 h-9 rounded-lg bg-blue-600/20 flex items-center justify-center">
+                    <Network className="w-5 h-5 text-blue-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Active Directory</h3>
+                    <p className="text-xs text-gray-500">Sincronización de usuarios vía LDAP</p>
+                  </div>
+                  {ldapStatus && (
+                    <div className="ml-auto flex items-center gap-3">
+                      <div className="text-right">
+                        <p className="text-xs text-gray-500">Última sync</p>
+                        <p className="text-xs text-white font-medium">
+                          {ldapStatus.last_sync
+                            ? new Date(ldapStatus.last_sync).toLocaleString('es-ES')
+                            : 'Nunca'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-500">Usuarios activos</p>
+                        <p className="text-xs text-white font-medium">{ldapStatus.total_users}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className={lbl}>URL del servidor LDAP *</label>
+                    <input className={inp} value={ldapConfig.url}
+                      onChange={e => setLdapConfig(c => ({ ...c, url: e.target.value }))}
+                      placeholder="ldap://192.168.1.10:389" />
+                    <p className="text-xs text-gray-600 mt-1">Usa ldap:// en el puerto 389</p>
+                  </div>
+                  <div>
+                    <label className={lbl}>Base DN *</label>
+                    <input className={inp} value={ldapConfig.base_dn}
+                      onChange={e => setLdapConfig(c => ({ ...c, base_dn: e.target.value }))}
+                      placeholder="DC=electrans,DC=es" />
+                  </div>
+                  <div>
+                    <label className={lbl}>Usuario de lectura (Bind DN) *</label>
+                    <input className={inp} value={ldapConfig.bind_dn}
+                      onChange={e => setLdapConfig(c => ({ ...c, bind_dn: e.target.value }))}
+                      placeholder="CN=ldap-reader,CN=Users,DC=electrans,DC=es" />
+                  </div>
+                  <div>
+                    <label className={lbl}>Contraseña del usuario *</label>
+                    <input className={inp} type="password" value={ldapConfig.bind_pass}
+                      onChange={e => setLdapConfig(c => ({ ...c, bind_pass: e.target.value }))}
+                      placeholder="••••••••" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className={lbl}>Filtro LDAP (opcional)</label>
+                    <input className={inp} value={ldapConfig.filter}
+                      onChange={e => setLdapConfig(c => ({ ...c, filter: e.target.value }))}
+                      placeholder="(&(objectClass=person)(mail=*)(!(userAccountControl:...)))" />
+                    <p className="text-xs text-gray-600 mt-1">
+                      El filtro por defecto excluye cuentas desactivadas y sin email.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-3 mt-5 pt-4 border-t border-gray-800">
+                  <button
+                    disabled={ldapTesting || !ldapConfig.url || !ldapConfig.bind_dn || !ldapConfig.bind_pass}
+                    onClick={async () => {
+                      setLdapTesting(true); setLdapTestResult(null);
+                      try {
+                        const r = await apiClient.post('/ldap/test', {
+                          url: ldapConfig.url, bind_dn: ldapConfig.bind_dn, bind_pass: ldapConfig.bind_pass
+                        });
+                        setLdapTestResult({ ok: true, message: r.data.message });
+                      } catch (e: any) {
+                        setLdapTestResult({ ok: false, message: e?.response?.data?.error || 'Error de conexión' });
+                      } finally { setLdapTesting(false); }
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-700 text-gray-300 hover:text-white hover:border-gray-600 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {ldapTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Network className="w-4 h-4" />}
+                    Probar conexión
+                  </button>
+
+                  <button
+                    disabled={saving || !ldapConfig.url || !ldapConfig.bind_dn || !ldapConfig.bind_pass || !ldapConfig.base_dn}
+                    onClick={async () => {
+                      setSaving(true);
+                      try {
+                        await apiClient.post('/ldap/config', ldapConfig);
+                        toast.success('Configuración LDAP guardada');
+                      } catch { toast.error('Error al guardar'); } finally { setSaving(false); }
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Guardar configuración
+                  </button>
+
+                  <button
+                    disabled={ldapSyncing}
+                    onClick={async () => {
+                      setLdapSyncing(true); setLdapSyncResult(null);
+                      try {
+                        const r = await apiClient.post('/ldap/sync');
+                        setLdapSyncResult(r.data);
+                        toast.success(`Sync completado: ${r.data.inserted} nuevos, ${r.data.updated} actualizados`);
+                        apiClient.get('/ldap/status').then(s => setLdapStatus(s.data)).catch(() => {});
+                      } catch (e: any) {
+                        toast.error(e?.response?.data?.error || 'Error en la sincronización');
+                      } finally { setLdapSyncing(false); }
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 ml-auto"
+                  >
+                    {ldapSyncing
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Sincronizando...</>
+                      : <><RefreshCw className="w-4 h-4" /> Sincronizar ahora</>}
+                  </button>
+                </div>
+
+                {/* Test result */}
+                {ldapTestResult && (
+                  <div className={`flex items-center gap-2 mt-3 px-3 py-2 rounded-lg text-sm ${ldapTestResult.ok ? 'bg-green-500/10 border border-green-500/30 text-green-400' : 'bg-red-500/10 border border-red-500/30 text-red-400'}`}>
+                    {ldapTestResult.ok ? <CheckCircle className="w-4 h-4 flex-shrink-0" /> : <XCircle className="w-4 h-4 flex-shrink-0" />}
+                    {ldapTestResult.message}
+                  </div>
+                )}
+
+                {/* Sync result */}
+                {ldapSyncResult && (
+                  <div className="mt-3 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm text-blue-300">
+                    <span className="font-medium">Resultado:</span> {ldapSyncResult.total} usuarios en AD →{' '}
+                    <span className="text-green-400">+{ldapSyncResult.inserted} nuevos</span>{', '}
+                    <span className="text-yellow-400">~{ldapSyncResult.updated} actualizados</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Info box */}
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+                <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-yellow-400" /> Campos sincronizados desde el AD
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-gray-400">
+                  {[
+                    ['givenName', 'Nombre'],
+                    ['sn', 'Apellidos'],
+                    ['mail', 'Email (clave única)'],
+                    ['telephoneNumber', 'Teléfono'],
+                    ['department', 'Departamento'],
+                    ['title', 'Puesto / Cargo'],
+                    ['physicalDeliveryOfficeName', 'Oficina'],
+                    ['employeeID', 'ID de empleado'],
+                  ].map(([field, label]) => (
+                    <div key={field} className="flex items-center gap-2 bg-gray-800/50 rounded px-2 py-1.5">
+                      <span className="text-blue-400 font-mono">{field}</span>
+                      <span className="text-gray-500">→</span>
+                      <span>{label}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-600 mt-3">
+                  ⏰ La sincronización automática se ejecuta cada día a las <strong className="text-gray-400">12:00</strong> (hora de Madrid).
+                  Los usuarios se crean o actualizan sin borrar datos existentes.
+                </p>
+              </div>
             </div>
           )}
 
