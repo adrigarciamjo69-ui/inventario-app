@@ -1,19 +1,12 @@
 /**
  * ldap-sync.js
  * Sincronización de usuarios desde Active Directory (LDAP) → client_users
- *
- * Variables de entorno necesarias en el backend:
- *   LDAP_URL          ldap://192.168.1.10:389
- *   LDAP_BIND_DN      CN=ldap-reader,CN=Users,DC=electrans,DC=es
- *   LDAP_BIND_PASS    contraseña_usuario_lectura
- *   LDAP_BASE_DN      DC=electrans,DC=es
- *   LDAP_FILTER       (&(objectClass=person)(mail=*)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))
  */
 
-const ldap    = require('ldapjs');
+const ldap     = require('ldapjs');
 const { pool } = require('./db');
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Config ────────────────────────────────────────────────────────────────────
 
 function getConfig() {
   const url      = process.env.LDAP_URL;
@@ -23,109 +16,125 @@ function getConfig() {
   const filter   = process.env.LDAP_FILTER ||
     '(&(objectClass=person)(mail=*)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))';
 
-  if (!url || !bindDN || !bindPass || !baseDN) {
-    throw new Error('Faltan variables de entorno LDAP (LDAP_URL, LDAP_BIND_DN, LDAP_BIND_PASS, LDAP_BASE_DN)');
-  }
+  if (!url || !bindDN || !bindPass || !baseDN)
+    throw new Error('Faltan variables LDAP (LDAP_URL, LDAP_BIND_DN, LDAP_BIND_PASS, LDAP_BASE_DN)');
+
   return { url, bindDN, bindPass, baseDN, filter };
 }
 
+// Extrae el primer valor de un atributo LDAP (compatible con ldapjs v3)
 function attr(entry, name) {
-  const a = entry.attributes.find(x => x.type === name);
-  if (!a) return null;
-  const val = a.vals?.[0] ?? a.values?.[0] ?? null;
-  return val ? String(val).trim() : null;
+  // ldapjs v3 expone los atributos como objeto pojo o array
+  if (entry.pojo) {
+    const a = entry.pojo.attributes.find(x => x.type === name);
+    if (!a || !a.values || !a.values.length) return null;
+    return String(a.values[0]).trim() || null;
+  }
+  // Fallback para otras versiones
+  if (entry.attributes) {
+    const a = Array.isArray(entry.attributes)
+      ? entry.attributes.find(x => x.type === name)
+      : entry.attributes[name];
+    if (!a) return null;
+    const val = a.vals?.[0] ?? a.values?.[0] ?? a[0] ?? null;
+    return val ? String(val).trim() : null;
+  }
+  return null;
 }
 
-// ── Fetch users from LDAP ────────────────────────────────────────────────────
+// ── Fetch desde LDAP ─────────────────────────────────────────────────────────
 
 function fetchLdapUsers(config) {
   return new Promise((resolve, reject) => {
     const client = ldap.createClient({
       url:            config.url,
-      timeout:        10000,
+      timeout:        15000,
       connectTimeout: 10000,
       tlsOptions:     { rejectUnauthorized: false },
     });
 
-    client.on('error', err => reject(new Error(`LDAP conexión: ${err.message}`)));
+    let settled = false;
+    const done = (err, val) => {
+      if (settled) return;
+      settled = true;
+      if (err) reject(err); else resolve(val);
+    };
+
+    client.on('error', err => done(new Error(`LDAP conexión: ${err.message}`)));
 
     client.bind(config.bindDN, config.bindPass, (err) => {
-      if (err) { client.destroy(); return reject(new Error(`LDAP bind: ${err.message}`)); }
+      if (err) {
+        client.destroy();
+        return done(new Error(`LDAP bind: ${err.message}`));
+      }
 
       const users = [];
       const opts = {
         scope:      'sub',
         filter:     config.filter,
         attributes: [
-          'sAMAccountName',
-          'givenName',
-          'sn',
-          'mail',
-          'telephoneNumber',
-          'mobile',
-          'department',
-          'title',
-          'physicalDeliveryOfficeName',
-          'employeeID',
-          'employeeNumber',
-          'distinguishedName',
+          'sAMAccountName', 'givenName', 'sn', 'mail',
+          'telephoneNumber', 'mobile', 'department', 'title',
+          'physicalDeliveryOfficeName', 'employeeID', 'employeeNumber',
         ],
-        paged:      true,
-        sizeLimit:  5000,
+        paged:     { pageSize: 200 },
+        sizeLimit: 0,
       };
 
       client.search(config.baseDN, opts, (err, res) => {
-        if (err) { client.destroy(); return reject(new Error(`LDAP search: ${err.message}`)); }
+        if (err) {
+          client.destroy();
+          return done(new Error(`LDAP search: ${err.message}`));
+        }
 
         res.on('searchEntry', entry => {
-          const firstName = attr(entry, 'givenName');
-          const lastName  = attr(entry, 'sn');
-          const email     = attr(entry, 'mail');
-          if (!firstName || !lastName || !email) return; // campos mínimos obligatorios
+          try {
+            const firstName = attr(entry, 'givenName');
+            const lastName  = attr(entry, 'sn');
+            const email     = attr(entry, 'mail');
+            if (!firstName || !lastName || !email) return;
 
-          users.push({
-            username:    attr(entry, 'sAMAccountName'),
-            first_name:  firstName,
-            last_name:   lastName,
-            email:       email.toLowerCase(),
-            phone:       attr(entry, 'telephoneNumber') || attr(entry, 'mobile'),
-            department:  attr(entry, 'department'),
-            position:    attr(entry, 'title'),
-            office:      attr(entry, 'physicalDeliveryOfficeName'),
-            employee_id: attr(entry, 'employeeID') || attr(entry, 'employeeNumber'),
-          });
+            users.push({
+              first_name:  firstName,
+              last_name:   lastName,
+              email:       email.toLowerCase().trim(),
+              phone:       attr(entry, 'telephoneNumber') || attr(entry, 'mobile'),
+              department:  attr(entry, 'department'),
+              position:    attr(entry, 'title'),
+              employee_id: attr(entry, 'employeeID') || attr(entry, 'employeeNumber'),
+            });
+          } catch (_) {}
         });
 
-        res.on('error', err => { client.destroy(); reject(new Error(`LDAP result: ${err.message}`)); });
-
-        res.on('end', () => {
-          client.unbind();
-          resolve(users);
-        });
+        res.on('error',  err => done(new Error(`LDAP result: ${err.message}`)));
+        res.on('end',    ()  => { try { client.unbind(); } catch (_) {} done(null, users); });
       });
     });
   });
 }
 
-// ── Sync to DB ───────────────────────────────────────────────────────────────
+// ── Sync a BD ─────────────────────────────────────────────────────────────────
 
 async function syncToDB(ldapUsers) {
   const client = await pool.connect();
-  let inserted = 0, updated = 0, skipped = 0, errors = [];
+  let inserted = 0, updated = 0, skipped = 0;
+  const errors = [];
 
   try {
     await client.query('BEGIN');
 
     for (const u of ldapUsers) {
+      // SAVEPOINT por usuario: si falla, hacemos rollback solo de ese registro
+      // y la transacción global sigue viva para los demás.
       try {
-        // Check if exists by email (most reliable key)
-        const existing = await client.query(
+        await client.query('SAVEPOINT sp_user');
+
+        const { rows } = await client.query(
           'SELECT id FROM client_users WHERE email = $1',
           [u.email]
         );
 
-        if (existing.rows.length > 0) {
-          // Update existing
+        if (rows.length > 0) {
           await client.query(
             `UPDATE client_users SET
                first_name  = $1,
@@ -133,47 +142,44 @@ async function syncToDB(ldapUsers) {
                phone       = COALESCE($3, phone),
                department  = COALESCE($4, department),
                position    = COALESCE($5, position),
-               employee_id = COALESCE($6, employee_id),
+               employee_id = COALESCE(NULLIF($6,''), employee_id),
                updated_at  = NOW()
              WHERE email = $7`,
-            [
-              u.first_name, u.last_name,
-              u.phone, u.department, u.position,
-              u.employee_id, u.email
-            ]
+            [u.first_name, u.last_name, u.phone, u.department,
+             u.position, u.employee_id || '', u.email]
           );
           updated++;
         } else {
-          // Insert new
           await client.query(
             `INSERT INTO client_users
-               (first_name, last_name, email, phone, department, position, employee_id, active)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, true)
-             ON CONFLICT (email) DO NOTHING`,
-            [
-              u.first_name, u.last_name, u.email,
-              u.phone, u.department, u.position, u.employee_id
-            ]
+               (first_name, last_name, email, phone, department, position, active)
+             VALUES ($1,$2,$3,$4,$5,$6,true)`,
+            [u.first_name, u.last_name, u.email,
+             u.phone, u.department, u.position]
           );
           inserted++;
         }
+
+        await client.query('RELEASE SAVEPOINT sp_user');
       } catch (rowErr) {
+        // Revertimos solo este usuario, continuamos con los demás
+        try { await client.query('ROLLBACK TO SAVEPOINT sp_user'); } catch (_) {}
         skipped++;
         errors.push(`${u.email}: ${rowErr.message}`);
+        console.warn(`  ⚠ Saltado ${u.email}: ${rowErr.message}`);
       }
     }
 
-    // Save last sync timestamp
+    // Guarda timestamp de última sync
     await client.query(
-      `INSERT INTO app_settings (key, value, updated_at)
-       VALUES ('ldap_last_sync', $1, NOW())
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      `INSERT INTO app_settings (key, value, updated_at) VALUES ('ldap_last_sync',$1,NOW())
+       ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()`,
       [JSON.stringify(new Date().toISOString())]
     );
 
     await client.query('COMMIT');
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch (_) {}
     throw err;
   } finally {
     client.release();
@@ -182,7 +188,7 @@ async function syncToDB(ldapUsers) {
   return { total: ldapUsers.length, inserted, updated, skipped, errors };
 }
 
-// ── Main export ──────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 
 async function runSync() {
   console.log('🔄 Iniciando sincronización LDAP...');
@@ -193,10 +199,10 @@ async function runSync() {
     console.log(`   → ${ldapUsers.length} usuarios encontrados en el AD`);
     const result    = await syncToDB(ldapUsers);
     const elapsed   = ((Date.now() - start) / 1000).toFixed(1);
-    console.log(`✅ Sync LDAP completado en ${elapsed}s: +${result.inserted} nuevos, ~${result.updated} actualizados, ${result.skipped} errores`);
+    console.log(`✅ Sync LDAP: +${result.inserted} nuevos, ~${result.updated} actualizados, ${result.skipped} saltados (${elapsed}s)`);
     return { ok: true, ...result, elapsed: parseFloat(elapsed) };
   } catch (err) {
-    console.error('❌ Error en sync LDAP:', err.message);
+    console.error('❌ Error sync LDAP:', err.message);
     return { ok: false, error: err.message };
   }
 }
