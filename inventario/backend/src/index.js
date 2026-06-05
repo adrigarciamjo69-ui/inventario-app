@@ -265,6 +265,7 @@ initDB()
         // node-cron or ldap not installed — skip cron silently
       }
     });
+  })
   .catch((err) => {
     console.error('❌ Error al inicializar la base de datos:', err);
     process.exit(1);
