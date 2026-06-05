@@ -88,7 +88,7 @@ router.post('/sync', authenticate, requireAdmin, async (req, res) => {
   } catch (_) {}
 
   const result = await runSync();
-  if (!result.ok) return res.status(500).json(result);
+  if (!result.ok) return res.json({ ok: false, error: result.error });
   res.json(result);
 });
 
@@ -106,18 +106,21 @@ router.post('/test', authenticate, requireAdmin, async (req, res) => {
 
   const timeout = setTimeout(() => {
     client.destroy();
-    res.status(408).json({ ok: false, error: 'Tiempo de espera agotado (8s). Verifica la URL y el firewall.' });
+    if (!res.headersSent)
+      res.json({ ok: false, error: 'Tiempo de espera agotado (8s). Verifica la URL y el firewall.' });
   }, 9000);
 
   client.on('error', err => {
     clearTimeout(timeout);
-    res.status(500).json({ ok: false, error: `Error de conexión: ${err.message}` });
+    if (!res.headersSent)
+      res.json({ ok: false, error: `Error de conexión: ${err.message}` });
   });
 
   client.bind(bind_dn, bind_pass, (err) => {
     clearTimeout(timeout);
     client.destroy();
-    if (err) return res.status(401).json({ ok: false, error: `Credenciales inválidas: ${err.message}` });
+    if (res.headersSent) return;
+    if (err) return res.json({ ok: false, error: `Credenciales inválidas: ${err.message}` });
     res.json({ ok: true, message: 'Conexión al Active Directory correcta ✓' });
   });
 });
