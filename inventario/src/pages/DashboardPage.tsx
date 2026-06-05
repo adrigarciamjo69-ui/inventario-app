@@ -888,15 +888,15 @@ export default function DashboardPage() {
 
   const load = useCallback(() => {
     setLoading(true);
-    Promise.all([
+    Promise.allSettled([
       apiClient.get('/assets'),
       apiClient.get('/software'),
       apiClient.get('/services'),
     ]).then(([a, sw, svc]) => {
-      setAssets(a.data || []);
-      setSoftware(sw.data || []);
-      setServices(svc.data || []);
-    }).catch(() => {}).finally(() => setLoading(false));
+      setAssets(a.status === 'fulfilled' ? (a.value.data || []) : []);
+      setSoftware(sw.status === 'fulfilled' ? (sw.value.data || []) : []);
+      setServices(svc.status === 'fulfilled' ? (svc.value.data || []) : []);
+    }).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { load(); }, [load]);
