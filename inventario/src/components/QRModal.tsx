@@ -25,10 +25,19 @@ export default function QRModal({
 }: Props) {
   const printRef = useRef<HTMLDivElement>(null);
 
-  // El QR contiene TODA la información del activo como texto legible.
-  // Al escanearlo, el móvil muestra estos datos directamente (sin conexión).
-  const qrData = [
-    `Activo: ${brand} ${model}`.trim(),
+  // El QR se codifica como una tarjeta de contacto (vCard). Es un formato que
+  // tanto iPhone como Android reconocen de forma NATIVA: al escanearlo muestran
+  // una ficha con todos los datos del activo, sin conexión y sin abrir ninguna
+  // web. (El texto plano no funciona en la cámara del iPhone.)
+  const esc = (v: unknown) =>
+    String(v ?? '')
+      .replace(/\\/g, '\\\\')
+      .replace(/\n/g, '\\n')
+      .replace(/,/g, '\\,')
+      .replace(/;/g, '\\;');
+
+  const safeNotes = notes && notes.length > 120 ? notes.slice(0, 120) + '…' : notes;
+  const note = [
     `ID: ${assetId}`,
     serialNumber ? `N/S: ${serialNumber}` : null,
     category ? `Categoría: ${category}` : null,
@@ -38,12 +47,18 @@ export default function QRModal({
     (price !== undefined && price !== null && !Number.isNaN(price)) ? `Precio: ${price}` : null,
     purchaseDate ? `F. compra: ${purchaseDate}` : null,
     purchaseOrder ? `Orden de compra: ${purchaseOrder}` : null,
-    notes ? `Notas: ${notes.length > 120 ? notes.slice(0, 120) + '…' : notes}` : null,
+    safeNotes ? `Notas: ${safeNotes}` : null,
   ].filter(Boolean).join('\n');
 
-  // Límite de seguridad: si el texto es demasiado largo, qrcode.react lanza un
-  // error al generar el QR y eso rompería el render del modal. Lo recortamos.
-  const qrValue = qrData.length > 1000 ? qrData.slice(0, 1000) : qrData;
+  const qrValue = [
+    'BEGIN:VCARD',
+    'VERSION:3.0',
+    `FN:${esc(`${brand} ${model}`.trim())}`,
+    `ORG:${esc(category || '')}`,
+    `TITLE:${esc(`Activo ${assetId}`)}`,
+    `NOTE:${esc(note)}`,
+    'END:VCARD',
+  ].join('\n');
 
   const handlePrint = () => {
     const content = printRef.current?.innerHTML;
