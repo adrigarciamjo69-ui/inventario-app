@@ -21,7 +21,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { Asset } from '../types';
 import BulkEditModal from '../components/BulkEditModal';
-​
+
 // -- Constantes ----------------------------------------------------------------
 const LICENSE_TYPES: { value: SoftwareLicenseType; label: string; color: string }[] = [
   { value: 'perpetua',    label: 'Perpetua',     color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
