@@ -335,6 +335,13 @@ export default function AssetForm({ asset, onSave, onClose, isEdit }: AssetFormP
           model={form.model}
           serialNumber={form.serial_number}
           category={categories.find(c => c.value === form.category)?.label || form.category}
+          status={statuses.find(s => s.value === form.status)?.label || form.status}
+          assignedTo={form.assigned_to}
+          department={form.department}
+          price={form.price}
+          purchaseDate={form.purchase_date?.slice(0, 10)}
+          purchaseOrder={form.purchase_order}
+          notes={form.notes}
           onClose={() => setShowQr(false)}
         />
       )}
