@@ -16,9 +16,10 @@ const getLinkTypeColor = (t: string) => LINK_TYPES.find(l => l.value === t)?.col
 
 interface AssetUsersPanelProps {
   assetId: string;
+  onLinksChange?: (links: AssetUserLink[]) => void;
 }
 
-export default function AssetUsersPanel({ assetId }: AssetUsersPanelProps) {
+export default function AssetUsersPanel({ assetId, onLinksChange }: AssetUsersPanelProps) {
   const { user } = useAuth();
   const canEdit = user?.role === 'admin' || user?.role === 'editor';
 
@@ -43,6 +44,11 @@ export default function AssetUsersPanel({ assetId }: AssetUsersPanelProps) {
       .then(res => setClientUsers(res.data.filter((u: ClientUser) => u.active)))
       .catch(() => {});
   }, [assetId]);
+
+  // Notificar al formulario padre cada vez que cambian los vínculos
+  useEffect(() => {
+    onLinksChange?.(links);
+  }, [links, onLinksChange]);
 
   const linkedIds = new Set(links.map(l => l.client_user_id));
   const available = clientUsers.filter(u => !linkedIds.has(u.id));
@@ -89,7 +95,7 @@ export default function AssetUsersPanel({ assetId }: AssetUsersPanelProps) {
             <option value="">Seleccionar usuario cliente...</option>
             {available.map(u => (
               <option key={u.id} value={u.id}>
-                {u.first_name} {u.last_name}{u.department ? ` — ${u.department}` : ''}
+                {u.first_name} {u.last_name}{u.department ? ` - ${u.department}` : ''}
               </option>
             ))}
           </select>
