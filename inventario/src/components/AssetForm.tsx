@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Save, User, FileText, ExternalLink, History } from 'lucide-react';
-import { Asset, AssetCategory, AssetStatus, ClientUser } from '../types';
+import { Asset, AssetCategory, AssetStatus, ClientUser, AssetUserLink } from '../types';
 import DocumentsPanel from './DocumentsPanel';
 import AssetUsersPanel from './AssetUsersPanel';
 import AuditLogPanel from './AuditLogPanel';
@@ -31,7 +31,7 @@ const emptyForm: Omit<Asset, 'created_at' | 'updated_at'> & { department: string
   notes:          '',
 };
 
-// ── Field ─────────────────────────────────────────────────────────────────────
+// -- Field ---------------------------------------------------------------------
 // Definido FUERA del componente para que React no lo desmonte en cada re-render
 
 interface FieldProps { label: string; name: string; children: React.ReactNode; error?: string; }
@@ -50,7 +50,7 @@ function inputClass(errors: Record<string, string>, name: string) {
   return `w-full bg-gray-800 border ${errors[name] ? 'border-red-500' : 'border-gray-700'} rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors`;
 }
 
-// ── AssignedToAutocomplete ────────────────────────────────────────────────────
+// -- AssignedToAutocomplete ----------------------------------------------------
 // Definido FUERA de AssetForm para evitar desmontajes en cada re-render
 
 function AssignedToAutocomplete({ value, onChange, iClass }: {
@@ -121,7 +121,7 @@ function AssignedToAutocomplete({ value, onChange, iClass }: {
               </div>
               <div className="min-w-0">
                 <p className="text-sm text-white truncate">{u.first_name} {u.last_name}</p>
-                <p className="text-xs text-gray-400 truncate">{u.department || '—'}{u.employee_id ? ` · ${u.employee_id}` : ''}</p>
+                <p className="text-xs text-gray-400 truncate">{u.department || '-'}{u.employee_id ? ` · ${u.employee_id}` : ''}</p>
               </div>
             </button>
           ))}
@@ -132,7 +132,7 @@ function AssignedToAutocomplete({ value, onChange, iClass }: {
   );
 }
 
-// ── DeliveryRecordsPanel ──────────────────────────────────────────────────────
+// -- DeliveryRecordsPanel ------------------------------------------------------
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   pendiente:   { label: 'Pendiente',   color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30' },
@@ -223,7 +223,7 @@ function DeliveryRecordsPanel({ assetId }: { assetId: string }) {
       ) : (
         <div className="space-y-2">
           {records.map(r => {
-            const recipientName = r.first_name ? `${r.first_name} ${r.last_name}` : r.recipient_name || '—';
+            const recipientName = r.first_name ? `${r.first_name} ${r.last_name}` : r.recipient_name || '-';
             const st = STATUS_LABELS[r.status] || STATUS_LABELS.pendiente;
             return (
               <div key={r.id} className="flex items-center gap-3 px-4 py-2.5 bg-gray-800/40 border border-gray-700/50 rounded-lg">
@@ -243,7 +243,7 @@ function DeliveryRecordsPanel({ assetId }: { assetId: string }) {
   );
 }
 
-// ── Props ─────────────────────────────────────────────────────────────────────
+// -- Props ---------------------------------------------------------------------
 
 interface AssetFormProps {
   asset?: Asset | null;
@@ -252,7 +252,7 @@ interface AssetFormProps {
   isEdit?: boolean;
 }
 
-// ── Componente principal ──────────────────────────────────────────────────────
+// -- Componente principal ------------------------------------------------------
 
 export default function AssetForm({ asset, onSave, onClose, isEdit }: AssetFormProps) {
   const { categories } = useCategories();
@@ -260,6 +260,10 @@ export default function AssetForm({ asset, onSave, onClose, isEdit }: AssetFormP
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [deptOptions, setDeptOptions] = useState<string[]>([]);
+  // Usuarios vinculados al activo (desde AssetUsersPanel). Si hay alguno,
+  // "Asignado a" y "Departamento" se rellenan desde la persona vinculada.
+  const [links, setLinks] = useState<AssetUserLink[]>([]);
+  const linkedUser = links.find(l => l.link_type === 'asignado') || links[0] || null;
 
   // Load existing departments for the dropdown
   useEffect(() => {
@@ -289,6 +293,15 @@ export default function AssetForm({ asset, onSave, onClose, isEdit }: AssetFormP
       setForm(emptyForm);
     }
   }, [asset]);
+
+  // Si hay un usuario vinculado, sus datos mandan sobre "Asignado a" y "Departamento".
+  useEffect(() => {
+    const lu = links.find(l => l.link_type === 'asignado') || links[0];
+    if (lu) {
+      const fullName = `${lu.first_name || ''} ${lu.last_name || ''}`.trim();
+      setForm(f => ({ ...f, assigned_to: fullName, department: lu.department || '' }));
+    }
+  }, [links]);
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -386,36 +399,66 @@ export default function AssetForm({ asset, onSave, onClose, isEdit }: AssetFormP
                 placeholder="OC-2024-001" className={iClass('purchase_order')} />
             </Field>
 
-            {/* ── Asignado a — con autocomplete ── */}
+            {/* -- Asignado a - autocomplete, o bloqueado si hay usuario vinculado -- */}
             <Field label="Asignado a" name="assigned_to">
-              <AssignedToAutocomplete
-                value={form.assigned_to}
-                onChange={(val, user) => {
-                  setForm(f => ({
-                    ...f,
-                    assigned_to: val,
-                    // Auto-fill department from user if not already set
-                    department: user?.department || f.department,
-                  }));
-                }}
-                iClass={iClass('assigned_to')}
-              />
+              {linkedUser ? (
+                <>
+                  <div className="relative flex items-center">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={form.assigned_to}
+                      disabled
+                      className={iClass('assigned_to') + ' pl-9 opacity-60 cursor-not-allowed'}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Se rellena desde el usuario vinculado.</p>
+                </>
+              ) : (
+                <AssignedToAutocomplete
+                  value={form.assigned_to}
+                  onChange={(val, user) => {
+                    setForm(f => ({
+                      ...f,
+                      assigned_to: val,
+                      // Auto-fill department from user if not already set
+                      department: user?.department || f.department,
+                    }));
+                  }}
+                  iClass={iClass('assigned_to')}
+                />
+              )}
             </Field>
 
-            {/* ── Departamento — desplegable con opciones + libre ── */}
+            {/* -- Departamento - desplegable + libre, o bloqueado si hay usuario vinculado -- */}
             <Field label="Departamento" name="department">
-              <input
-                id="department"
-                list="dept-options"
-                type="text"
-                value={(form as any).department || ''}
-                onChange={e => setForm(f => ({ ...f, department: e.target.value }))}
-                placeholder="Selecciona o escribe un departamento..."
-                className={iClass('department')}
-              />
-              <datalist id="dept-options">
-                {deptOptions.map(d => <option key={d} value={d} />)}
-              </datalist>
+              {linkedUser ? (
+                <>
+                  <input
+                    id="department"
+                    type="text"
+                    value={(form as any).department || ''}
+                    disabled
+                    className={iClass('department') + ' opacity-60 cursor-not-allowed'}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Se rellena desde el usuario vinculado.</p>
+                </>
+              ) : (
+                <>
+                  <input
+                    id="department"
+                    list="dept-options"
+                    type="text"
+                    value={(form as any).department || ''}
+                    onChange={e => setForm(f => ({ ...f, department: e.target.value }))}
+                    placeholder="Selecciona o escribe un departamento..."
+                    className={iClass('department')}
+                  />
+                  <datalist id="dept-options">
+                    {deptOptions.map(d => <option key={d} value={d} />)}
+                  </datalist>
+                </>
+              )}
             </Field>
 
             <div className="col-span-1 sm:col-span-2 lg:col-span-3">
@@ -428,7 +471,7 @@ export default function AssetForm({ asset, onSave, onClose, isEdit }: AssetFormP
             </div>
           </div>
 
-          {isEdit && asset && <AssetUsersPanel assetId={asset.id} />}
+          {isEdit && asset && <AssetUsersPanel assetId={asset.id} onLinksChange={setLinks} />}
           {isEdit && asset && <DeliveryRecordsPanel assetId={asset.id} />}
           {isEdit && asset && <AuditLogPanel assetId={asset.id} />}
           {isEdit && asset && (
