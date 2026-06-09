@@ -829,6 +829,7 @@ export default function AssetsPage() {
           </div>
         </div>
       )}
+
     </div>
   );
 }
