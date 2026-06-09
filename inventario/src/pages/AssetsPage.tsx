@@ -741,6 +741,13 @@ export default function AssetsPage() {
           model={qrAsset.model}
           serialNumber={qrAsset.serial_number}
           category={getCategoryLabel(qrAsset.category)}
+          status={statusLabels[qrAsset.status] || qrAsset.status}
+          assignedTo={qrAsset.assigned_to}
+          department={qrAsset.department}
+          price={qrAsset.price}
+          purchaseDate={qrAsset.purchase_date?.slice(0, 10)}
+          purchaseOrder={qrAsset.purchase_order}
+          notes={qrAsset.notes}
           onClose={() => setQrAsset(null)}
         />
       )}
