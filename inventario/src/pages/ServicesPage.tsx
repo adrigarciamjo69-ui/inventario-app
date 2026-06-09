@@ -13,30 +13,30 @@ import { Service, ServiceStatus, BillingCycle } from '../types';
 import { useAuth } from '../context/AuthContext';
 
 // -- Constants -----------------------------------------------------------------
-​
+
 const SERVICE_STATUSES: { value: ServiceStatus; label: string; color: string }[] = [
   { value: 'activo',    label: 'Activo',    color: 'bg-green-500/20 text-green-400 border-green-500/30' },
   { value: 'inactivo',  label: 'Inactivo',  color: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
   { value: 'cancelado', label: 'Cancelado', color: 'bg-red-500/20 text-red-400 border-red-500/30' },
   { value: 'pendiente', label: 'Pendiente', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
 ];
-​
+
 const BILLING_CYCLES: { value: BillingCycle; label: string }[] = [
   { value: 'mensual',  label: 'Mensual' },
   { value: 'anual',    label: 'Anual' },
   { value: 'unico',    label: 'Pago único' },
   { value: 'gratuito', label: 'Gratuito' },
 ];
-​
+
 const SERVICE_CATEGORIES = [
   'Cloud / Hosting', 'Seguridad', 'Comunicaciones', 'Productividad',
   'Monitorización', 'Backup', 'Dominio / DNS', 'Soporte', 'SaaS', 'Otros'
 ];
-​
+
 const getStatusColor = (s: string) => SERVICE_STATUSES.find(x => x.value === s)?.color || 'bg-gray-500/20 text-gray-400 border-gray-500/30';
 const getStatusLabel = (s: string) => SERVICE_STATUSES.find(x => x.value === s)?.label || s;
 const getBillingLabel = (b: string) => BILLING_CYCLES.find(x => x.value === b)?.label || b;
-​
+
 const emptyForm = {
   name: '', provider: '', category: 'Cloud / Hosting', url: '',
   account: '', department: '', cost: 0,
@@ -45,16 +45,16 @@ const emptyForm = {
 };
 
 // -- Helpers -------------------------------------------------------------------
-​
+
 function inp(extra = '') {
   return `w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 ${extra}`;
 }
 function lbl() { return 'block text-xs font-medium text-gray-400 mb-1'; }
-​
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><label className={lbl()}>{label}</label>{children}</div>;
 }
-​
+
 function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
     <button onClick={e => { e.stopPropagation(); onChange(); }} className="flex items-center justify-center w-5 h-5" type="button">
@@ -66,7 +66,7 @@ function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => voi
 }
 
 // -- ServiceForm Modal ---------------------------------------------------------
-​
+
 function ServiceForm({ service, onSave, onClose }: {
   service?: Service; onSave: (data: typeof emptyForm) => Promise<void>; onClose: () => void;
 }) {
@@ -78,16 +78,16 @@ function ServiceForm({ service, onSave, onClose }: {
     status: service.status, notes: service.notes || '',
   } : emptyForm);
   const [saving, setSaving] = useState(false);
-​
+
   const set = (k: string, v: unknown) => setForm(f => ({ ...f, [k]: v }));
-​
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) { toast.error('El nombre es obligatorio'); return; }
     setSaving(true);
     try { await onSave(form); } finally { setSaving(false); }
   };
-​
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
       <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
@@ -95,7 +95,7 @@ function ServiceForm({ service, onSave, onClose }: {
           <h2 className="text-lg font-semibold text-white">{service ? 'Editar servicio' : 'Nuevo servicio'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
-​
+
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
@@ -143,7 +143,7 @@ function ServiceForm({ service, onSave, onClose }: {
             </div>
           </div>
         </form>
-​
+
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-800">
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-400 hover:text-white border border-gray-700 hover:border-gray-600 rounded-lg transition-colors">Cancelar</button>
           <button onClick={handleSubmit} disabled={saving} className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50">
@@ -157,11 +157,11 @@ function ServiceForm({ service, onSave, onClose }: {
 }
 
 // -- Main Page -----------------------------------------------------------------
-​
+
 export default function ServicesPage() {
   const { user } = useAuth();
   const canEdit = user?.role === 'admin' || user?.role === 'editor';
-​
+
   const [services, setServices]   = useState<Service[]>([]);
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState('');
@@ -176,20 +176,20 @@ export default function ServicesPage() {
   const [sortDir, setSortDir]     = useState<'asc'|'desc'>('asc');
   const [deleting, setDeleting]   = useState(false);
   const [importLoading, setImportLoading] = useState(false);
-​
+
   const load = useCallback(() => {
     setLoading(true);
     apiClient.get('/services').then(r => setServices(r.data)).catch(() => toast.error('Error al cargar servicios')).finally(() => setLoading(false));
   }, []);
-​
+
   useEffect(() => { load(); }, [load]);
-​
+
   const departments = [...new Set(services.map(s => s.department).filter(Boolean))] as string[];
   const categories  = [...new Set(services.map(s => s.category).filter(Boolean))] as string[];
-​
+
   const deptOptions   = [...new Set(services.map(s => s.department).filter(Boolean))].sort() as string[];
   const catOptions    = [...new Set(services.map(s => s.category).filter(Boolean))].sort() as string[];
-​
+
   const filtered = services
     .filter(s => {
       const q = search.toLowerCase();
@@ -203,21 +203,21 @@ export default function ServicesPage() {
       const vb = String(b[sortField] ?? '').toLowerCase();
       return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
     });
-​
+
   const toggleSort = (f: keyof Service) => {
     if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(f); setSortDir('asc'); }
   };
-​
+
   const SortIcon = ({ field }: { field: keyof Service }) =>
     sortField === field
       ? (sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)
       : <ChevronUp className="w-3 h-3 opacity-20" />;
-​
+
   const allSelected = filtered.length > 0 && filtered.every(s => selected.has(s.id));
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(filtered.map(s => s.id)));
   const toggleOne = (id: number) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-​
+
   const handleSave = async (data: typeof emptyForm) => {
     try {
       if (editSvc) {
@@ -233,13 +233,13 @@ export default function ServicesPage() {
       throw err;
     }
   };
-​
+
   const handleDelete = async (id: number) => {
     if (!confirm('¿Eliminar este servicio?')) return;
     try { await apiClient.delete(`/services/${id}`); toast.success('Eliminado'); load(); }
     catch { toast.error('Error al eliminar'); }
   };
-​
+
   const handleBulkDelete = async () => {
     if (!confirm(`¿Eliminar ${selected.size} servicio(s)?`)) return;
     setDeleting(true);
@@ -248,14 +248,14 @@ export default function ServicesPage() {
       toast.success(`${selected.size} eliminados`); setSelected(new Set()); load();
     } catch { toast.error('Error al eliminar'); } finally { setDeleting(false); }
   };
-​
+
   // Renewal alert (30 days)
   const soonRenewal = filtered.filter(s => {
     if (!s.renewal_date) return false;
     const days = Math.ceil((new Date(s.renewal_date).getTime() - Date.now()) / 86400000);
     return days >= 0 && days <= 30;
   });
-​
+
   const handleDownloadTemplate = () => {
     const example = [{ name: 'Google Workspace', provider: 'Google LLC',
       category: 'Cloud / Hosting', url: 'https://workspace.google.com',
@@ -267,7 +267,7 @@ export default function ServicesPage() {
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
     a.download = 'plantilla_servicios.csv'; a.click();
   };
-​
+
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     setImportLoading(true);
@@ -293,12 +293,12 @@ export default function ServicesPage() {
       error: () => { toast.error('Error al leer el CSV'); setImportLoading(false); }
     });
   };
-​
+
   const totalCost = filtered.reduce((acc, s) => {
     const monthly = s.billing_cycle === 'mensual' ? s.cost : s.billing_cycle === 'anual' ? s.cost / 12 : 0;
     return acc + monthly;
   }, 0);
-​
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -314,7 +314,7 @@ export default function ServicesPage() {
           </button>
         )}
       </div>
-​
+
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
@@ -329,7 +329,7 @@ export default function ServicesPage() {
           </div>
         ))}
       </div>
-​
+
       {/* Renewal alert */}
       {soonRenewal.length > 0 && (
         <div className="flex items-start gap-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
@@ -340,7 +340,7 @@ export default function ServicesPage() {
           </p>
         </div>
       )}
-​
+
       {/* Filters */}
       <div className="space-y-2">
         <div className="flex flex-wrap gap-2 items-center">
@@ -392,7 +392,7 @@ export default function ServicesPage() {
           )}
         </div>
       </div>
-​
+
       {/* Bulk actions */}
       {selected.size > 0 && canEdit && (
         <div className="flex items-center gap-3 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg">
@@ -407,7 +407,7 @@ export default function ServicesPage() {
           </button>
         </div>
       )}
-​
+
       {/* Table */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         {loading ? (
@@ -510,7 +510,7 @@ export default function ServicesPage() {
           </div>
         )}
       </div>
-​
+
       {bulkEditModal && (
         <BulkEditModal
           title="Servicios"
@@ -549,4 +549,3 @@ export default function ServicesPage() {
     </div>
   );
 }
-​
