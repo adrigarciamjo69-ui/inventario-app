@@ -236,6 +236,7 @@ async function initDB() {
     // Migraciones no destructivas
     await client.query(`
       ALTER TABLE client_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+      ALTER TABLE assets ADD COLUMN IF NOT EXISTS department VARCHAR(100);
     `);
   } finally {
     client.release();
