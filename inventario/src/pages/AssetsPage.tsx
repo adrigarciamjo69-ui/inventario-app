@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Plus, Search, Download, Upload, Pencil, Trash2,
   ChevronUp, ChevronDown, Filter, FileDown, AlertTriangle, Package,
-  User2, X, CheckSquare, Square, Tag, Paperclip
+  User2, X, CheckSquare, Square, Tag, Paperclip, QrCode
 } from 'lucide-react';
 import Papa from 'papaparse';
 import toast from 'react-hot-toast';
@@ -12,6 +12,7 @@ import AssetForm from '../components/AssetForm';
 import { useAuth } from '../context/AuthContext';
 import { useCategories } from '../context/CategoriesContext';
 import BulkEditModal from '../components/BulkEditModal';
+import QRModal from '../components/QRModal';
 
 const statusColors: Record<string, string> = {
   activo:    'bg-green-500/20 text-green-400 border-green-500/30',
@@ -65,6 +66,7 @@ export default function AssetsPage() {
   const [sortDir, setSortDir]             = useState<'asc' | 'desc'>('asc');
   const [showForm, setShowForm]           = useState(false);
   const [editAsset, setEditAsset]         = useState<Asset | null>(null);
+  const [qrAsset, setQrAsset]             = useState<Asset | null>(null);
   const [deleteModal, setDeleteModal]     = useState<Asset | null>(null);
   const [deleting, setDeleting]           = useState(false);
   const [importLoading, setImportLoading] = useState(false);
@@ -698,6 +700,10 @@ export default function AssetsPage() {
                             className="text-gray-600 hover:text-yellow-400 transition-colors p-1" title="Documentos adjuntos">
                             <Paperclip className="w-4 h-4" />
                           </button>
+                          <button onClick={() => setQrAsset(a)}
+                            className="text-gray-500 hover:text-green-400 transition-colors p-1" title="Etiqueta QR">
+                            <QrCode className="w-4 h-4" />
+                          </button>
                           {canEdit && user?.role === 'admin' && (
                             <button onClick={() => setDeleteModal(a)}
                               className="text-gray-500 hover:text-red-400 transition-colors p-1" title="Eliminar">
@@ -725,6 +731,18 @@ export default function AssetsPage() {
       {showForm && (
         <AssetForm asset={editAsset} isEdit={!!editAsset} onSave={handleSave}
           onClose={() => { setShowForm(false); setEditAsset(null); }} />
+      )}
+
+      {/* Modal etiqueta QR */}
+      {qrAsset && (
+        <QRModal
+          assetId={qrAsset.id}
+          brand={qrAsset.brand}
+          model={qrAsset.model}
+          serialNumber={qrAsset.serial_number}
+          category={getCategoryLabel(qrAsset.category)}
+          onClose={() => setQrAsset(null)}
+        />
       )}
 
       {/* Delete individual */}
