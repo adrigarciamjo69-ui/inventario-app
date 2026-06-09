@@ -163,6 +163,19 @@ async function initDB() {
         UNIQUE(asset_id, client_user_id)
       );
 
+      CREATE TABLE IF NOT EXISTS asset_audit_log (
+        id SERIAL PRIMARY KEY,
+        asset_id VARCHAR(50) REFERENCES assets(id) ON DELETE SET NULL,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        user_name VARCHAR(150) NOT NULL DEFAULT 'Sistema',
+        action VARCHAR(20) NOT NULL CHECK (action IN ('created','updated','deleted')),
+        changes JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_asset_audit_log_asset ON asset_audit_log(asset_id);
+      CREATE INDEX IF NOT EXISTS idx_asset_audit_log_created ON asset_audit_log(created_at);
+
       CREATE TABLE IF NOT EXISTS floorplan_items (
         id SERIAL PRIMARY KEY,
         floor INTEGER NOT NULL DEFAULT 0,
