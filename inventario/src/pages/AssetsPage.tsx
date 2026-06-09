@@ -26,12 +26,12 @@ const statusLabels: Record<string, string> = {
 
 const CSV_TEMPLATE_HEADERS = [
   'id', 'serial_number', 'category', 'brand', 'model',
-  'price', 'purchase_date', 'purchase_order', 'assigned_to', 'status', 'notes'
+  'price', 'purchase_date', 'purchase_order', 'assigned_to', 'employee_id', 'department', 'status', 'notes'
 ];
 
 type SortField = keyof Asset;
 
-// ── Checkbox visual ───────────────────────────────────────────────────────────
+// -- Checkbox visual -----------------------------------------------------------
 function Checkbox({ checked, indeterminate, onChange }: {
   checked: boolean; indeterminate?: boolean; onChange: () => void;
 }) {
@@ -69,7 +69,7 @@ export default function AssetsPage() {
   const [deleting, setDeleting]           = useState(false);
   const [importLoading, setImportLoading] = useState(false);
 
-  // ── Selección múltiple ──────────────────────────────────────────────────────
+  // -- Selección múltiple ------------------------------------------------------
   const [selected, setSelected]           = useState<Set<string>>(new Set());
   const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
   const [bulkDeleting, setBulkDeleting]   = useState(false);
@@ -79,7 +79,7 @@ export default function AssetsPage() {
 
   const canEdit = user?.role === 'admin' || user?.role === 'editor';
 
-  // ── Dropdown open states ────────────────────────────────────────────────────
+  // -- Dropdown open states ----------------------------------------------------
   const [openDropdown, setOpenDropdown] = useState<'category' | 'status' | 'dept' | null>(null);
   const toggleDropdown = (name: 'category' | 'status' | 'dept') =>
     setOpenDropdown(prev => (prev === name ? null : name));
@@ -142,7 +142,7 @@ export default function AssetsPage() {
       return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     });
 
-  // ── Helpers de selección ────────────────────────────────────────────────────
+  // -- Helpers de selección ----------------------------------------------------
   const filteredIds = filtered.map(a => a.id);
   const allSelected = filteredIds.length > 0 && filteredIds.every(id => selected.has(id));
   const someSelected = filteredIds.some(id => selected.has(id));
@@ -186,7 +186,7 @@ export default function AssetsPage() {
 
   const clearSelection = () => { setSelected(new Set()); lastClickedId.current = null; };
 
-  // ── Acciones masivas ────────────────────────────────────────────────────────
+  // -- Acciones masivas --------------------------------------------------------
   const handleBulkExport = () => {
     const rows = assets
       .filter(a => selected.has(a.id))
@@ -249,7 +249,7 @@ export default function AssetsPage() {
     load();
   };
 
-  // ── CRUD ────────────────────────────────────────────────────────────────────
+  // -- CRUD --------------------------------------------------------------------
   const handleSave = async (data: Omit<Asset, 'created_at' | 'updated_at'>) => {
     try {
       if (editAsset) {
@@ -279,7 +279,7 @@ export default function AssetsPage() {
     } finally { setDeleting(false); }
   };
 
-  // ── CSV ─────────────────────────────────────────────────────────────────────
+  // -- CSV ---------------------------------------------------------------------
   const handleExport = () => {
     const rows = filtered.map((a) => ({
       id: a.id, serial_number: a.serial_number, category: a.category,
@@ -302,7 +302,8 @@ export default function AssetsPage() {
       id: 'IT-001', serial_number: 'SN-ABC12345', category: 'laptop',
       brand: 'Dell', model: 'Latitude 5540', price: '1200.00',
       purchase_date: '2024-01-15', purchase_order: 'OC-2024-001',
-      assigned_to: 'Juan García', status: 'activo', notes: 'Ejemplo'
+      assigned_to: 'Juan García', employee_id: 'EMP-001', department: 'TI',
+      status: 'activo', notes: 'Ejemplo'
     }];
     const csv = Papa.unparse({ fields: CSV_TEMPLATE_HEADERS, data: example });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -336,13 +337,15 @@ export default function AssetsPage() {
           purchase_date:  r.purchase_date?.trim() || '',
           purchase_order: r.purchase_order?.trim() || '',
           assigned_to:    r.assigned_to?.trim() || '',
+          employee_id:    r.employee_id?.trim() || '',
           department:     r.department?.trim() || '',
           status:         r.status?.trim() || 'activo',
           notes:          r.notes?.trim() || '',
         }));
         try {
           const res = await importAssets(rows);
-          toast.success(`Importados: ${res.data.inserted} nuevos, ${res.data.updated} actualizados`);
+          const linkedMsg = res.data.linked ? `, ${res.data.linked} usuarios vinculados` : '';
+          toast.success(`Importados: ${res.data.inserted} nuevos, ${res.data.updated} actualizados${linkedMsg}`);
           load();
         } catch (err: unknown) {
           const er = err as { response?: { data?: { error?: string } } };
@@ -441,7 +444,7 @@ export default function AssetsPage() {
           />
         </div>
         <div className="flex flex-wrap gap-2 items-center">
-          {/* Categoría — dropdown multiselect */}
+          {/* Categoría - dropdown multiselect */}
           <div className="relative">
             <button
               onClick={(e) => { e.stopPropagation(); toggleDropdown('category'); }}
@@ -484,7 +487,7 @@ export default function AssetsPage() {
             )}
           </div>
 
-          {/* Estado — dropdown multiselect */}
+          {/* Estado - dropdown multiselect */}
           <div className="relative">
             <button
               onClick={(e) => { e.stopPropagation(); toggleDropdown('status'); }}
@@ -527,7 +530,7 @@ export default function AssetsPage() {
             )}
           </div>
 
-          {/* Departamento — dropdown multiselect */}
+          {/* Departamento - dropdown multiselect */}
           <div className="relative">
             <button
               onClick={(e) => { e.stopPropagation(); toggleDropdown('dept'); }}
@@ -675,11 +678,11 @@ export default function AssetsPage() {
                         {Number(a.price).toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
                       </td>
                       <td className="px-4 py-3 text-gray-400 whitespace-nowrap text-xs">
-                        {a.purchase_date ? new Date(a.purchase_date).toLocaleDateString('es-ES') : '—'}
+                        {a.purchase_date ? new Date(a.purchase_date).toLocaleDateString('es-ES') : '-'}
                       </td>
-                      <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{a.purchase_order || '—'}</td>
-                      <td className="px-4 py-3 text-gray-300 whitespace-nowrap text-xs">{a.assigned_to || '—'}</td>
-                      <td className="px-4 py-3 text-gray-400 whitespace-nowrap text-xs">{a.department || '—'}</td>
+                      <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{a.purchase_order || '-'}</td>
+                      <td className="px-4 py-3 text-gray-300 whitespace-nowrap text-xs">{a.assigned_to || '-'}</td>
+                      <td className="px-4 py-3 text-gray-400 whitespace-nowrap text-xs">{a.department || '-'}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${statusColors[a.status] || ''}`}>
                           {statusLabels[a.status] || a.status}
