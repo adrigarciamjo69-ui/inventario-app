@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { pool } = require('../db');
 const { authenticate, requireEditor, requireAdmin } = require('../middleware/auth');
+const { logChange, diffAsset } = require('../audit');
 
 const VALID_STATUSES = ['activo', 'inactivo', 'reparacion', 'baja'];
 
@@ -63,6 +64,10 @@ router.post('/', authenticate, requireEditor, async (req, res) => {
     );
     const newAsset = rows[0];
 
+    // Audit log
+    logChange({ assetId: newAsset.id, userId: req.user?.id, userName: req.user?.full_name,
+      action: 'created', changes: null });
+
     // Auto-vincular actas de entrega que referencien este serial_number
     try {
       await pool.query(
@@ -92,6 +97,10 @@ router.put('/:id', authenticate, requireEditor, async (req, res) => {
     return res.status(400).json({ error: 'Número de serie, marca y modelo son requeridos' });
   }
   try {
+    // Fetch old values for diff
+    const { rows: oldRows } = await pool.query('SELECT * FROM assets WHERE id=$1', [req.params.id]);
+    const oldAsset = oldRows[0] || null;
+
     const { rows } = await pool.query(
       `UPDATE assets SET
         serial_number=$1, category=$2, brand=$3, model=$4, price=$5,
@@ -109,6 +118,13 @@ router.put('/:id', authenticate, requireEditor, async (req, res) => {
       ]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Activo no encontrado' });
+
+    // Audit log
+    const changes = diffAsset(oldAsset, rows[0]);
+    if (changes.length > 0)
+      logChange({ assetId: req.params.id, userId: req.user?.id, userName: req.user?.full_name,
+        action: 'updated', changes });
+
     res.json(rows[0]);
   } catch (err) {
     if (err.code === '23505') {
@@ -122,11 +138,11 @@ router.put('/:id', authenticate, requireEditor, async (req, res) => {
 // DELETE /api/assets/:id
 router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
   try {
-    const { rowCount } = await pool.query(
-      'DELETE FROM assets WHERE id = $1',
-      [req.params.id]
-    );
+    const { rows: oldRows } = await pool.query('SELECT brand, model, serial_number FROM assets WHERE id=$1', [req.params.id]);
+    const { rowCount } = await pool.query('DELETE FROM assets WHERE id = $1', [req.params.id]);
     if (rowCount === 0) return res.status(404).json({ error: 'Activo no encontrado' });
+    if (oldRows[0]) logChange({ assetId: req.params.id, userId: req.user?.id, userName: req.user?.full_name,
+      action: 'deleted', changes: [{ label: 'Activo', old: `${oldRows[0].brand} ${oldRows[0].model} (${oldRows[0].serial_number})`, new: null }] });
     res.json({ message: 'Activo eliminado correctamente' });
   } catch (err) {
     console.error(err);
@@ -343,5 +359,95 @@ router.post('/:id/auto-link-deliveries', authenticate, requireEditor, async (req
     res.status(500).json({ error: 'Error al vincular actas' });
   } finally {
     client.release();
+  }
+});
+
+// GET /api/assets/:id/log — historial de cambios
+router.get('/:id/log', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, user_name, action, changes, created_at
+       FROM asset_audit_log
+       WHERE asset_id = $1
+       ORDER BY created_at DESC
+       LIMIT 100`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener historial' });
+  }
+});
+
+// GET /api/assets/stats — datos para gráficos de tendencia
+router.get('/stats/monthly', authenticate, async (req, res) => {
+  try {
+    // Activos creados por mes (últimos 12 meses)
+    const { rows: created } = await pool.query(`
+      SELECT
+        TO_CHAR(created_at, 'YYYY-MM') AS month,
+        COUNT(*) AS count,
+        SUM(price) AS total_value
+      FROM assets
+      WHERE created_at >= NOW() - INTERVAL '12 months'
+      GROUP BY month
+      ORDER BY month ASC
+    `);
+
+    // Estado actual del inventario
+    const { rows: byStatus } = await pool.query(`
+      SELECT status, COUNT(*) AS count
+      FROM assets
+      GROUP BY status
+    `);
+
+    // Evolución acumulada de activos (por mes)
+    const { rows: cumulative } = await pool.query(`
+      SELECT
+        TO_CHAR(date_trunc('month', created_at), 'YYYY-MM') AS month,
+        COUNT(*) OVER (ORDER BY date_trunc('month', created_at)) AS total
+      FROM (
+        SELECT DISTINCT date_trunc('month', created_at) AS created_at FROM assets
+      ) t
+      ORDER BY month
+    `);
+
+    // Valor total del inventario por mes (acumulado)
+    const { rows: valueByMonth } = await pool.query(`
+      SELECT
+        TO_CHAR(date_trunc('month', created_at), 'YYYY-MM') AS month,
+        SUM(SUM(price)) OVER (ORDER BY date_trunc('month', created_at)) AS cumulative_value
+      FROM assets
+      GROUP BY date_trunc('month', created_at)
+      ORDER BY month
+    `);
+
+    // Categorías más comunes
+    const { rows: byCategory } = await pool.query(`
+      SELECT category, COUNT(*) AS count
+      FROM assets
+      GROUP BY category
+      ORDER BY count DESC
+      LIMIT 8
+    `);
+
+    // Bajas por mes (últimos 12 meses - via audit log)
+    const { rows: retired } = await pool.query(`
+      SELECT
+        TO_CHAR(created_at, 'YYYY-MM') AS month,
+        COUNT(*) AS count
+      FROM asset_audit_log
+      WHERE action = 'updated'
+        AND changes @> '[{"field":"status","new":"baja"}]'
+        AND created_at >= NOW() - INTERVAL '12 months'
+      GROUP BY month
+      ORDER BY month ASC
+    `);
+
+    res.json({ created, byStatus, cumulative, valueByMonth, byCategory, retired });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener estadísticas' });
   }
 });
