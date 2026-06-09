@@ -11,7 +11,7 @@ import toast from 'react-hot-toast';
 import { apiClient } from '../api/client';
 import { Service, ServiceStatus, BillingCycle } from '../types';
 import { useAuth } from '../context/AuthContext';
-​
+
 // -- Constants -----------------------------------------------------------------
 ​
 const SERVICE_STATUSES: { value: ServiceStatus; label: string; color: string }[] = [
@@ -43,7 +43,7 @@ const emptyForm = {
   billing_cycle: 'mensual' as BillingCycle,
   renewal_date: '', status: 'activo' as ServiceStatus, notes: '',
 };
-​
+
 // -- Helpers -------------------------------------------------------------------
 ​
 function inp(extra = '') {
@@ -64,7 +64,7 @@ function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => voi
     </button>
   );
 }
-​
+
 // -- ServiceForm Modal ---------------------------------------------------------
 ​
 function ServiceForm({ service, onSave, onClose }: {
@@ -155,7 +155,7 @@ function ServiceForm({ service, onSave, onClose }: {
     </div>
   );
 }
-​
+
 // -- Main Page -----------------------------------------------------------------
 ​
 export default function ServicesPage() {
