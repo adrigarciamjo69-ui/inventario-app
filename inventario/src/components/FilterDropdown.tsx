@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Filter, ChevronDown } from 'lucide-react';
-​
+
 export interface FilterOption {
   value: string;
   label: string;
   icon?: ReactNode;
 }
-​
+
 interface FilterDropdownProps {
   label: string;
   options: FilterOption[];
@@ -14,7 +14,7 @@ interface FilterDropdownProps {
   onChange: (next: Set<string>) => void;
   emptyText?: string;
 }
-​
+
 /**
  * Filtro desplegable multiselección con el mismo estilo que la página de Hardware.
  * Sustituye a los antiguos "pills" de filtro.
@@ -28,7 +28,7 @@ export default function FilterDropdown({
 }: FilterDropdownProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-​
+
   // Cerrar al hacer clic fuera
   useEffect(() => {
     if (!open) return;
@@ -38,13 +38,13 @@ export default function FilterDropdown({
     document.addEventListener('click', handler);
     return () => document.removeEventListener('click', handler);
   }, [open]);
-​
+
   const toggle = (v: string) => {
     const n = new Set(selected);
     n.has(v) ? n.delete(v) : n.add(v);
     onChange(n);
   };
-​
+
   return (
     <div className="relative" ref={ref}>
       <button
@@ -99,4 +99,3 @@ export default function FilterDropdown({
     </div>
   );
 }
-​
