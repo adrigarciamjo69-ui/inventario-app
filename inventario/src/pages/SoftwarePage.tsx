@@ -22,7 +22,7 @@ import { useAuth } from '../context/AuthContext';
 import { Asset } from '../types';
 import BulkEditModal from '../components/BulkEditModal';
 ​
-// ── Constantes ────────────────────────────────────────────────────────────────
+// -- Constantes ----------------------------------------------------------------
 const LICENSE_TYPES: { value: SoftwareLicenseType; label: string; color: string }[] = [
   { value: 'perpetua',    label: 'Perpetua',     color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
   { value: 'suscripcion', label: 'Suscripción',  color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
@@ -52,7 +52,7 @@ const emptyForm = {
   status: 'activo' as SoftwareStatus, notes: '',
 };
 ​
-// ── Checkbox ──────────────────────────────────────────────────────────────────
+// -- Checkbox ------------------------------------------------------------------
 function Checkbox({ checked, indeterminate, onChange }: {
   checked: boolean; indeterminate?: boolean; onChange: () => void;
 }) {
@@ -68,7 +68,7 @@ function Checkbox({ checked, indeterminate, onChange }: {
   );
 }
 ​
-// ── Field ─────────────────────────────────────────────────────────────────────
+// -- Field ---------------------------------------------------------------------
 function Field({ label, children, error }: { label: string; children: React.ReactNode; error?: string }) {
   return (
     <div>
@@ -82,7 +82,7 @@ function Field({ label, children, error }: { label: string; children: React.Reac
 const ic = (err?: string) =>
   `w-full bg-gray-800 border ${err ? 'border-red-500' : 'border-gray-700'} rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors`;
 ​
-// ── Panel de vínculos ─────────────────────────────────────────────────────────
+// -- Panel de vínculos ---------------------------------------------------------
 interface LinksPanelProps {
   software: Software;
   canEdit: boolean;
@@ -169,7 +169,7 @@ function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
   };
 ​
   const linkedAssetIds  = new Set(assetLinks.map(l => l.asset_id));
-  // NO filtramos usuarios ya vinculados — un usuario puede ocupar varios puestos
+  // NO filtramos usuarios ya vinculados - un usuario puede ocupar varios puestos
   const availableAssets = assets.filter(a => !linkedAssetIds.has(a.id));
 ​
   return (
@@ -200,7 +200,7 @@ function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
                 className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
                 <option value="">Seleccionar activo...</option>
                 {availableAssets.map(a => (
-                  <option key={a.id} value={a.id}>{a.id} — {a.brand} {a.model}</option>
+                  <option key={a.id} value={a.id}>{a.id} - {a.brand} {a.model}</option>
                 ))}
               </select>
               <button onClick={handleLinkAsset} disabled={!selAsset || addingAsset}
@@ -280,7 +280,7 @@ function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
                 </option>
                 {clientUsers.map(u => (
                   <option key={u.id} value={u.id}>
-                    {u.first_name} {u.last_name}{u.department ? ` — ${u.department}` : ''}
+                    {u.first_name} {u.last_name}{u.department ? ` - ${u.department}` : ''}
                     {userLinks.filter(l => l.user_id === u.id).length > 0
                       ? ` (${userLinks.filter(l => l.user_id === u.id).length} puesto${userLinks.filter(l => l.user_id === u.id).length > 1 ? 's' : ''} ya asignado${userLinks.filter(l => l.user_id === u.id).length > 1 ? 's' : ''})`
                       : ''}
@@ -333,7 +333,7 @@ function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
   );
 }
 ​
-// ── Modal de formulario ───────────────────────────────────────────────────────
+// -- Modal de formulario -------------------------------------------------------
 interface SoftwareFormProps {
   software?: Software | null;
   onSave: (data: typeof emptyForm) => Promise<void>;
@@ -499,7 +499,7 @@ function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: Softw
   );
 }
 ​
-// ── Página principal ──────────────────────────────────────────────────────────
+// -- Página principal ----------------------------------------------------------
 export default function SoftwarePage() {
   const { user } = useAuth();
   const canEdit = user?.role === 'admin' || user?.role === 'editor';
@@ -518,7 +518,7 @@ export default function SoftwarePage() {
   const [deleteModal, setDeleteModal] = useState<Software | null>(null);
   const [deleting, setDeleting]       = useState(false);
 ​
-  // ── Selección múltiple ──────────────────────────────────────────────────────
+  // -- Selección múltiple ------------------------------------------------------
   const [selected, setSelected]           = useState<Set<number>>(new Set());
   const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
   const [bulkDeleting, setBulkDeleting]   = useState(false);
@@ -800,7 +800,7 @@ export default function SoftwarePage() {
                         <p className="text-white font-medium">{sw.name}</p>
                       </td>
                       <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{sw.vendor}</td>
-                      <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{sw.version || '—'}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{sw.version || '-'}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${getLicenseColor(sw.license_type)}`}>
                           {getLicenseLabel(sw.license_type)}
@@ -817,7 +817,7 @@ export default function SoftwarePage() {
                           <span className={isExpiringSoon ? 'text-yellow-400 font-medium' : 'text-gray-400'}>
                             {isExpiringSoon && '⚠️ '}{new Date(sw.expiry_date).toLocaleDateString('es-ES')}
                           </span>
-                        ) : <span className="text-gray-600">—</span>}
+                        ) : <span className="text-gray-600">-</span>}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(sw.status)}`}>
