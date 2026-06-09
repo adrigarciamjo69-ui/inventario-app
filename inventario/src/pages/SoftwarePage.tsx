@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import Papa from 'papaparse';
 import toast from 'react-hot-toast';
+import FilterDropdown from '../components/FilterDropdown';
 import {
   Software, SoftwareLicenseType, SoftwareStatus,
   SoftwareAssetLink, SoftwareUserLink, ClientUser
@@ -20,7 +21,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { Asset } from '../types';
 import BulkEditModal from '../components/BulkEditModal';
-
+​
 // ── Constantes ────────────────────────────────────────────────────────────────
 const LICENSE_TYPES: { value: SoftwareLicenseType; label: string; color: string }[] = [
   { value: 'perpetua',    label: 'Perpetua',     color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
@@ -30,19 +31,19 @@ const LICENSE_TYPES: { value: SoftwareLicenseType; label: string; color: string 
   { value: 'opensource',  label: 'Open Source',  color: 'bg-teal-500/20 text-teal-400 border-teal-500/30' },
   { value: 'trial',       label: 'Trial',        color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
 ];
-
+​
 const SW_STATUSES: { value: SoftwareStatus; label: string; color: string }[] = [
   { value: 'activo',   label: 'Activo',    color: 'bg-green-500/20 text-green-400 border-green-500/30' },
   { value: 'inactivo', label: 'Inactivo',  color: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
   { value: 'expirado', label: 'Expirado',  color: 'bg-red-500/20 text-red-400 border-red-500/30' },
   { value: 'baja',     label: 'Baja',      color: 'bg-orange-500/20 text-orange-400 border-orange-500/30' },
 ];
-
+​
 const getLicenseColor = (t: string) => LICENSE_TYPES.find(l => l.value === t)?.color || 'bg-gray-500/20 text-gray-400 border-gray-500/30';
 const getLicenseLabel = (t: string) => LICENSE_TYPES.find(l => l.value === t)?.label || t;
 const getStatusColor  = (s: string) => SW_STATUSES.find(x => x.value === s)?.color || 'bg-gray-500/20 text-gray-400 border-gray-500/30';
 const getStatusLabel  = (s: string) => SW_STATUSES.find(x => x.value === s)?.label || s;
-
+​
 const emptyForm = {
   name: '', vendor: '', version: '',
   license_key: '', license_type: 'perpetua' as SoftwareLicenseType,
@@ -50,7 +51,7 @@ const emptyForm = {
   purchase_order: '', price: 0,
   status: 'activo' as SoftwareStatus, notes: '',
 };
-
+​
 // ── Checkbox ──────────────────────────────────────────────────────────────────
 function Checkbox({ checked, indeterminate, onChange }: {
   checked: boolean; indeterminate?: boolean; onChange: () => void;
@@ -66,7 +67,7 @@ function Checkbox({ checked, indeterminate, onChange }: {
     </button>
   );
 }
-
+​
 // ── Field ─────────────────────────────────────────────────────────────────────
 function Field({ label, children, error }: { label: string; children: React.ReactNode; error?: string }) {
   return (
@@ -77,17 +78,17 @@ function Field({ label, children, error }: { label: string; children: React.Reac
     </div>
   );
 }
-
+​
 const ic = (err?: string) =>
   `w-full bg-gray-800 border ${err ? 'border-red-500' : 'border-gray-700'} rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors`;
-
+​
 // ── Panel de vínculos ─────────────────────────────────────────────────────────
 interface LinksPanelProps {
   software: Software;
   canEdit: boolean;
   onRefresh: () => void;
 }
-
+​
 function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
   const [assets, setAssets]           = useState<Asset[]>([]);
   const [clientUsers, setClientUsers] = useState<ClientUser[]>([]);
@@ -98,23 +99,23 @@ function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
   const [addingAsset, setAddingAsset] = useState(false);
   const [addingUser, setAddingUser]   = useState(false);
   const [tab, setTab]                 = useState<'assets' | 'users'>('assets');
-
+​
   useEffect(() => {
     getAssets().then(r => setAssets(r.data)).catch(() => {});
     getClientUsers().then(r => setClientUsers(r.data.filter((u: ClientUser) => u.active))).catch(() => {});
   }, []);
-
+​
   useEffect(() => {
     setAssetLinks(software.asset_assignments || []);
     setUserLinks(software.user_assignments || []);
   }, [software]);
-
+​
   // Puestos: cuántos quedan disponibles
   const seatsUsed      = userLinks.length;
   const seatsTotal     = software.seats;
   const seatsAvailable = Math.max(0, seatsTotal - seatsUsed);
   const seatsExceeded  = seatsUsed > seatsTotal;
-
+​
   const handleLinkAsset = async () => {
     if (!selAsset) return;
     setAddingAsset(true);
@@ -129,7 +130,7 @@ function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
       toast.error(e.response?.data?.error || 'Error al vincular activo');
     } finally { setAddingAsset(false); }
   };
-
+​
   const handleUnlinkAsset = async (linkId: number) => {
     try {
       await unlinkSoftwareAsset(linkId);
@@ -138,7 +139,7 @@ function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
       onRefresh();
     } catch { toast.error('Error al desvincular activo'); }
   };
-
+​
   const handleLinkUser = async () => {
     if (!selUser) return;
     if (seatsAvailable <= 0) {
@@ -157,7 +158,7 @@ function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
       toast.error(e.response?.data?.error || 'Error al vincular usuario');
     } finally { setAddingUser(false); }
   };
-
+​
   const handleUnlinkUser = async (linkId: number) => {
     try {
       await unlinkSoftwareUser(linkId);
@@ -166,11 +167,11 @@ function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
       onRefresh();
     } catch { toast.error('Error al desvincular usuario'); }
   };
-
+​
   const linkedAssetIds  = new Set(assetLinks.map(l => l.asset_id));
   // NO filtramos usuarios ya vinculados — un usuario puede ocupar varios puestos
   const availableAssets = assets.filter(a => !linkedAssetIds.has(a.id));
-
+​
   return (
     <div className="mt-5 border-t border-gray-800 pt-5 space-y-4">
       <div className="flex gap-2 flex-wrap">
@@ -190,7 +191,7 @@ function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
           Usuarios ({seatsUsed}/{seatsTotal} puestos)
         </button>
       </div>
-
+​
       {tab === 'assets' && (
         <div className="space-y-3">
           {canEdit && (
@@ -232,10 +233,10 @@ function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
             )}
         </div>
       )}
-
+​
       {tab === 'users' && (
         <div className="space-y-3">
-
+​
           {/* Contador de puestos */}
           <div className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs font-medium
             ${seatsExceeded
@@ -262,13 +263,13 @@ function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
               <span className="text-gray-400 font-normal">{seatsUsed}/{seatsTotal}</span>
             </div>
           </div>
-
+​
           {/* Info sobre usuarios clientes */}
           <div className="flex items-center gap-2 text-xs text-blue-400/70 bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2">
             <Users2 className="w-3.5 h-3.5 flex-shrink-0" />
             Usuarios clientes de la organización · Un mismo usuario puede ocupar varios puestos
           </div>
-
+​
           {canEdit && (
             <div className="flex gap-2">
               <select value={selUser} onChange={e => setSelUser(e.target.value)}
@@ -293,7 +294,7 @@ function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
               </button>
             </div>
           )}
-
+​
           {userLinks.length === 0
             ? <p className="text-sm text-gray-600 text-center py-3">No hay usuarios asignados</p>
             : (
@@ -331,7 +332,7 @@ function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
     </div>
   );
 }
-
+​
 // ── Modal de formulario ───────────────────────────────────────────────────────
 interface SoftwareFormProps {
   software?: Software | null;
@@ -340,14 +341,14 @@ interface SoftwareFormProps {
   isEdit?: boolean;
   canEdit: boolean;
 }
-
+​
 function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: SoftwareFormProps) {
   const [form, setForm]               = useState(emptyForm);
   const [saving, setSaving]           = useState(false);
   const [errors, setErrors]           = useState<Record<string, string>>({});
   const [detail, setDetail]           = useState<Software | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-
+​
   useEffect(() => {
     if (software) {
       setForm({
@@ -365,7 +366,7 @@ function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: Softw
       }
     } else { setForm(emptyForm); }
   }, [software, isEdit]);
-
+​
   const validate = () => {
     const e: Record<string, string> = {};
     if (!form.name.trim()) e.name = 'Nombre requerido';
@@ -374,7 +375,7 @@ function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: Softw
     if (form.price < 0) e.price = 'El precio no puede ser negativo';
     return e;
   };
-
+​
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs = validate();
@@ -382,11 +383,11 @@ function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: Softw
     setSaving(true);
     try { await onSave(form); } finally { setSaving(false); }
   };
-
+​
   const handleRefresh = () => {
     if (software) getSoftware(software.id).then(r => setDetail(r.data)).catch(() => {});
   };
-
+​
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
       <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
@@ -399,7 +400,7 @@ function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: Softw
             <X className="w-5 h-5" />
           </button>
         </div>
-
+​
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <form id="sw-form" onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -470,7 +471,7 @@ function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: Softw
               </div>
             </div>
           </form>
-
+​
           {isEdit && (
             loadingDetail
               ? <div className="mt-5 flex items-center gap-2 text-gray-500 text-sm"><Loader2 className="w-4 h-4 animate-spin" /> Cargando vínculos...</div>
@@ -479,7 +480,7 @@ function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: Softw
                 : null
           )}
         </div>
-
+​
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-800">
           <button type="button" onClick={onClose}
             className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
@@ -497,12 +498,12 @@ function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: Softw
     </div>
   );
 }
-
+​
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function SoftwarePage() {
   const { user } = useAuth();
   const canEdit = user?.role === 'admin' || user?.role === 'editor';
-
+​
   const [list, setList]               = useState<Software[]>([]);
   const [loading, setLoading]         = useState(true);
   const [search, setSearch]           = useState('');
@@ -516,29 +517,29 @@ export default function SoftwarePage() {
   const [editSw, setEditSw]           = useState<Software | null>(null);
   const [deleteModal, setDeleteModal] = useState<Software | null>(null);
   const [deleting, setDeleting]       = useState(false);
-
+​
   // ── Selección múltiple ──────────────────────────────────────────────────────
   const [selected, setSelected]           = useState<Set<number>>(new Set());
   const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
   const [bulkDeleting, setBulkDeleting]   = useState(false);
   const [bulkStatusModal, setBulkStatusModal] = useState(false);
   const [bulkStatus, setBulkStatus]       = useState('activo');
-
+​
   const load = useCallback(() => {
     setLoading(true);
     getSoftwareList().then(r => setList(r.data)).catch(() => toast.error('Error al cargar software')).finally(() => setLoading(false));
   }, []);
-
+​
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setSelected(new Set()); }, [search, filterStatuses, filterLicenses, filterDepts]);
-
+​
   const handleSort = (f: keyof Software) => {
     if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(f); setSortDir('asc'); }
   };
-
+​
   const deptOptions = [...new Set(list.map(s => s.department).filter(Boolean))].sort() as string[];
-
+​
   const filtered = list
     .filter(s => {
       const q = search.toLowerCase();
@@ -554,11 +555,11 @@ export default function SoftwarePage() {
       const bv = String(b[sortField] ?? '');
       return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     });
-
+​
   const filteredIds = filtered.map(s => s.id);
   const allSelected = filteredIds.length > 0 && filteredIds.every(id => selected.has(id));
   const someSelected = filteredIds.some(id => selected.has(id));
-
+​
   const toggleAll = () => {
     if (allSelected) { setSelected(prev => { const n = new Set(prev); filteredIds.forEach(id => n.delete(id)); return n; }); }
     else { setSelected(prev => { const n = new Set(prev); filteredIds.forEach(id => n.add(id)); return n; }); }
@@ -567,7 +568,7 @@ export default function SoftwarePage() {
     setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   };
   const clearSelection = () => setSelected(new Set());
-
+​
   const handleBulkExport = () => {
     const rows = list.filter(s => selected.has(s.id)).map(s => ({
       name: s.name, vendor: s.vendor, version: s.version,
@@ -584,7 +585,7 @@ export default function SoftwarePage() {
     a.click(); URL.revokeObjectURL(url);
     toast.success(`Exportadas ${rows.length} licencias`);
   };
-
+​
   const handleBulkDelete = async () => {
     setBulkDeleting(true);
     let ok = 0, fail = 0;
@@ -594,7 +595,7 @@ export default function SoftwarePage() {
     if (fail > 0) toast.error(`${fail} no se pudo${fail > 1 ? 'ron' : ''} eliminar`);
     load();
   };
-
+​
   const handleBulkStatus = async () => {
     let ok = 0, fail = 0;
     for (const id of selected) {
@@ -607,7 +608,7 @@ export default function SoftwarePage() {
     if (fail > 0) toast.error(`${fail} no se pudo${fail > 1 ? 'ron' : ''} actualizar`);
     load();
   };
-
+​
   const handleSave = async (data: typeof emptyForm) => {
     try {
       if (editSw) { await updateSoftware(editSw.id, data); toast.success('Software actualizado'); }
@@ -618,26 +619,26 @@ export default function SoftwarePage() {
       toast.error(e.response?.data?.error || 'Error al guardar'); throw err;
     }
   };
-
+​
   const handleDelete = async () => {
     if (!deleteModal) return;
     setDeleting(true);
     try { await deleteSoftware(deleteModal.id); toast.success('Software eliminado'); setDeleteModal(null); load(); }
     catch { toast.error('Error al eliminar'); } finally { setDeleting(false); }
   };
-
+​
   const SortIcon = ({ field }: { field: keyof Software }) =>
     sortField !== field ? <ChevronUp className="w-3 h-3 text-gray-600" />
       : sortDir === 'asc' ? <ChevronUp className="w-3 h-3 text-purple-400" />
         : <ChevronDown className="w-3 h-3 text-purple-400" />;
-
+​
   const today = new Date();
   const soonExpiring = list.filter(s => {
     if (!s.expiry_date || s.status !== 'activo') return false;
     const diff = (new Date(s.expiry_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
     return diff >= 0 && diff <= 30;
   });
-
+​
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -653,7 +654,7 @@ export default function SoftwarePage() {
           </button>
         )}
       </div>
-
+​
       {/* Aviso expiración */}
       {soonExpiring.length > 0 && (
         <div className="flex items-start gap-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3">
@@ -666,7 +667,7 @@ export default function SoftwarePage() {
           </div>
         </div>
       )}
-
+​
       {/* Barra de selección múltiple */}
       {selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 bg-purple-600/10 border border-purple-500/30 rounded-xl px-4 py-3">
@@ -703,7 +704,7 @@ export default function SoftwarePage() {
           </button>
         </div>
       )}
-
+​
       {/* Filtros */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
         <div className="flex flex-col lg:flex-row gap-3">
@@ -713,38 +714,36 @@ export default function SoftwarePage() {
               placeholder="Buscar por nombre, proveedor, versión..."
               className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500" />
           </div>
-          <div className="flex gap-1.5 flex-wrap items-center">
-            <span className="text-xs text-gray-500">Estado:</span>
-            {SW_STATUSES.map(s => (
-              <button key={s.value} onClick={() => setFilterStatuses(prev => { const n=new Set(prev); n.has(s.value)?n.delete(s.value):n.add(s.value); return n; })}
-                className={`px-2 py-1 rounded-full text-xs border transition-colors ${filterStatuses.has(s.value) ? 'bg-purple-600 border-purple-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'}`}>
-                {s.label}
-              </button>
-            ))}
-            <span className="text-xs text-gray-500 ml-2">Tipo:</span>
-            {LICENSE_TYPES.map(l => (
-              <button key={l.value} onClick={() => setFilterLicenses(prev => { const n=new Set(prev); n.has(l.value)?n.delete(l.value):n.add(l.value); return n; })}
-                className={`px-2 py-1 rounded-full text-xs border transition-colors ${filterLicenses.has(l.value) ? 'bg-purple-600 border-purple-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'}`}>
-                {l.label}
-              </button>
-            ))}
-            {deptOptions.length > 0 && <span className="text-xs text-gray-500 ml-2">Dpto:</span>}
-            {deptOptions.map(d => (
-              <button key={d} onClick={() => setFilterDepts(prev => { const n=new Set(prev); n.has(d)?n.delete(d):n.add(d); return n; })}
-                className={`px-2 py-1 rounded-full text-xs border transition-colors ${filterDepts.has(d) ? 'bg-purple-600 border-purple-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'}`}>
-                {d}
-              </button>
-            ))}
+          <div className="flex gap-2 flex-wrap items-center">
+            <FilterDropdown
+              label="Estado"
+              options={SW_STATUSES.map(s => ({ value: s.value, label: s.label }))}
+              selected={filterStatuses}
+              onChange={setFilterStatuses}
+            />
+            <FilterDropdown
+              label="Tipo"
+              options={LICENSE_TYPES.map(l => ({ value: l.value, label: l.label }))}
+              selected={filterLicenses}
+              onChange={setFilterLicenses}
+            />
+            <FilterDropdown
+              label="Dpto"
+              options={deptOptions.map(d => ({ value: d, label: d }))}
+              selected={filterDepts}
+              onChange={setFilterDepts}
+              emptyText="Sin departamentos"
+            />
             {(filterStatuses.size>0||filterLicenses.size>0||filterDepts.size>0||search) && (
               <button onClick={() => { setSearch(''); setFilterStatuses(new Set()); setFilterLicenses(new Set()); setFilterDepts(new Set()); }}
-                className="px-2 py-1 text-xs text-gray-400 hover:text-white border border-gray-700 bg-gray-800 rounded-full transition-colors flex items-center gap-1">
-                <X className="w-3 h-3" /> Limpiar
+                className="px-3 py-1.5 text-xs text-gray-400 hover:text-white border border-gray-700 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors flex items-center gap-1">
+                <X className="w-3 h-3" /> Limpiar todo
               </button>
             )}
           </div>
         </div>
       </div>
-
+​
       {/* Tabla */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         {loading ? (
@@ -857,13 +856,13 @@ export default function SoftwarePage() {
           </div>
         )}
       </div>
-
+​
       {/* Modal formulario */}
       {showForm && (
         <SoftwareFormModal software={editSw} isEdit={!!editSw} canEdit={canEdit}
           onSave={handleSave} onClose={() => { setShowForm(false); setEditSw(null); }} />
       )}
-
+​
       {/* Modal eliminar individual */}
       {deleteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
@@ -887,7 +886,7 @@ export default function SoftwarePage() {
           </div>
         </div>
       )}
-
+​
       {/* Modal eliminar múltiple */}
       {bulkEditModal && (
         <BulkEditModal
@@ -934,7 +933,7 @@ export default function SoftwarePage() {
           </div>
         </div>
       )}
-
+​
       {/* Modal cambio estado múltiple */}
       {bulkStatusModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
