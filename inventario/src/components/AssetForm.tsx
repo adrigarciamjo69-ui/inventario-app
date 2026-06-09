@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, User, FileText, ExternalLink, History } from 'lucide-react';
+import { X, Save, User, FileText, ExternalLink, History, QrCode } from 'lucide-react';
 import { Asset, AssetCategory, AssetStatus, ClientUser, AssetUserLink } from '../types';
 import DocumentsPanel from './DocumentsPanel';
 import AssetUsersPanel from './AssetUsersPanel';
+import QRModal from './QRModal';
 import AuditLogPanel from './AuditLogPanel';
 import { useCategories } from '../context/CategoriesContext';
 import { apiClient } from '../api/client';
@@ -264,6 +265,7 @@ export default function AssetForm({ asset, onSave, onClose, isEdit }: AssetFormP
   // "Asignado a" y "Departamento" se rellenan desde la persona vinculada.
   const [links, setLinks] = useState<AssetUserLink[]>([]);
   const linkedUser = links.find(l => l.link_type === 'asignado') || links[0] || null;
+  const [showQr, setShowQr] = useState(false);
 
   // Load existing departments for the dropdown
   useEffect(() => {
@@ -326,12 +328,29 @@ export default function AssetForm({ asset, onSave, onClose, isEdit }: AssetFormP
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      {showQr && asset && (
+        <QRModal
+          assetId={asset.id}
+          brand={form.brand}
+          model={form.model}
+          serialNumber={form.serial_number}
+          category={categories.find(c => c.value === form.category)?.label || form.category}
+          onClose={() => setShowQr(false)}
+        />
+      )}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
           <h2 className="text-lg font-semibold text-white">{isEdit ? 'Editar Activo' : 'Nuevo Activo'}</h2>
           <div className="flex items-center gap-2">
+            {isEdit && asset && (
+              <button type="button" onClick={() => setShowQr(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm rounded-lg transition-colors"
+                title="Etiqueta QR">
+                <QrCode className="w-4 h-4" /> QR
+              </button>
+            )}
             <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
           </div>
         </div>
