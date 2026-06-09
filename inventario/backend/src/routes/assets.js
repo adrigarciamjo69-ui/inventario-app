@@ -157,7 +157,7 @@ router.post('/import', authenticate, requireEditor, async (req, res) => {
     return res.status(400).json({ error: 'No se proporcionaron activos para importar' });
   }
   const client = await pool.connect();
-  let inserted = 0, updated = 0, errors = [];
+  let inserted = 0, updated = 0, linked = 0, errors = [];
   try {
     await client.query('BEGIN');
     for (const a of assets) {
@@ -196,12 +196,52 @@ router.post('/import', authenticate, requireEditor, async (req, res) => {
         );
         if (result.rows[0].inserted) inserted++;
         else updated++;
+
+        // ── Vinculación automática del usuario cliente ──
+        // Se intenta identificar al usuario por employee_id (más fiable) y, si no,
+        // por nombre completo exacto. Si se encuentra una única coincidencia, se crea
+        // el vínculo "asignado" y los datos del usuario mandan sobre el activo.
+        let matchedUser = null;
+        if (a.employee_id?.trim()) {
+          const r = await client.query(
+            `SELECT id, first_name, last_name, department FROM client_users
+             WHERE LOWER(TRIM(employee_id)) = LOWER(TRIM($1)) AND active = true LIMIT 1`,
+            [a.employee_id.trim()]
+          );
+          if (r.rows.length === 1) matchedUser = r.rows[0];
+        }
+        if (!matchedUser && a.assigned_to?.trim()) {
+          const r = await client.query(
+            `SELECT id, first_name, last_name, department FROM client_users
+             WHERE LOWER(TRIM(first_name || ' ' || last_name)) = LOWER(TRIM($1)) AND active = true`,
+            [a.assigned_to.trim()]
+          );
+          if (r.rows.length === 1) matchedUser = r.rows[0];
+        }
+        if (matchedUser) {
+          const linkRes = await client.query(
+            `INSERT INTO asset_user_links (asset_id, client_user_id, link_type, assigned_at)
+             VALUES ($1, $2, 'asignado', NOW())
+             ON CONFLICT (asset_id, client_user_id) DO NOTHING`,
+            [a.id.trim(), matchedUser.id]
+          );
+          if (linkRes.rowCount > 0) linked++;
+          // Los datos del usuario vinculado mandan sobre el activo.
+          await client.query(
+            `UPDATE assets SET assigned_to = $1, department = $2, updated_at = NOW() WHERE id = $3`,
+            [
+              `${matchedUser.first_name} ${matchedUser.last_name}`.trim(),
+              matchedUser.department || null,
+              a.id.trim(),
+            ]
+          );
+        }
       } catch (rowErr) {
         errors.push(`Error en ${a.id}: ${rowErr.message}`);
       }
     }
     await client.query('COMMIT');
-    res.json({ inserted, updated, errors });
+    res.json({ inserted, updated, linked, errors });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error(err);
