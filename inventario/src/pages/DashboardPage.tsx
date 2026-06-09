@@ -2,15 +2,18 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Package, Activity, TrendingUp, AlertCircle, AlertTriangle,
   CheckCircle, User, Loader2, Package2, Globe, Building2,
-  Monitor, RefreshCw, Clock, ShieldAlert, ExternalLink
+  Monitor, RefreshCw, Clock, ShieldAlert, ExternalLink, BarChart2
 } from 'lucide-react';
+import {
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
+} from 'recharts';
 import { getAssets, apiClient } from '../api/client';
 import { Asset, Software, Service } from '../types';
 import { useCategories } from '../context/CategoriesContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-type ViewMode = 'general' | 'hardware' | 'software' | 'services' | 'department';
+type ViewMode = 'general' | 'hardware' | 'software' | 'services' | 'department' | 'tendencias';
 
 interface UnassignedItem {
   delivery_id: number; doc_id: string; client_user_id: number;
@@ -869,14 +872,236 @@ function DepartmentView({ assets, software, services }: { assets: Asset[]; softw
   );
 }
 
+// ── View: Tendencias ──────────────────────────────────────────────────────────
+
+const CHART_COLORS = ['#3b82f6','#8b5cf6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#14b8a6'];
+
+function TrendsView() {
+  const [stats, setStats] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const { getCategoryLabel } = useCategories();
+
+  useEffect(() => {
+    apiClient.get('/assets/stats/monthly')
+      .then(r => setStats(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+    </div>
+  );
+
+  if (!stats) return <p className="text-gray-500 text-center py-20">Error al cargar estadísticas</p>;
+
+  // Format month labels
+  const fmtMonth = (m: string) => {
+    const [y, mo] = m.split('-');
+    return new Date(+y, +mo - 1).toLocaleDateString('es-ES', { month: 'short', year: '2-digit' });
+  };
+
+  const createdData = (stats.created || []).map((r: any) => ({
+    month: fmtMonth(r.month), altas: parseInt(r.count), valor: parseFloat(r.total_value || 0)
+  }));
+
+  const retiredData = (stats.retired || []).map((r: any) => ({
+    month: fmtMonth(r.month), bajas: parseInt(r.count)
+  }));
+
+  // Merge altas + bajas by month
+  const monthlyMap: Record<string, any> = {};
+  createdData.forEach((d: any) => { monthlyMap[d.month] = { ...monthlyMap[d.month], month: d.month, altas: d.altas, valor: d.valor }; });
+  retiredData.forEach((d: any) => { monthlyMap[d.month] = { ...monthlyMap[d.month], month: d.month, bajas: d.bajas }; });
+  const monthlyData = Object.values(monthlyMap).map((d: any) => ({ ...d, altas: d.altas || 0, bajas: d.bajas || 0 }));
+
+  const cumulativeData = (stats.cumulative || []).map((r: any) => ({
+    month: fmtMonth(r.month), total: parseInt(r.total)
+  }));
+
+  const valueData = (stats.valueByMonth || []).map((r: any) => ({
+    month: fmtMonth(r.month), valor: Math.round(parseFloat(r.cumulative_value || 0))
+  }));
+
+  const categoryData = (stats.byCategory || []).map((r: any) => ({
+    name: getCategoryLabel(r.category), value: parseInt(r.count)
+  }));
+
+  const statusData = (stats.byStatus || []).map((r: any) => ({
+    name: r.status === 'reparacion' ? 'Reparación' : r.status.charAt(0).toUpperCase() + r.status.slice(1),
+    value: parseInt(r.count)
+  }));
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null;
+    return (
+      <div className="bg-gray-800 border border-gray-700 rounded-lg p-3 text-xs shadow-xl">
+        <p className="text-gray-400 mb-1.5 font-medium">{label}</p>
+        {payload.map((p: any, i: number) => (
+          <p key={i} style={{ color: p.color }} className="font-medium">
+            {p.name}: {typeof p.value === 'number' && p.value > 999
+              ? `${p.value.toLocaleString('es-ES')} €` : p.value}
+          </p>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard title="Total activos" value={statusData.reduce((a: number, s: any) => a + s.value, 0)}
+          icon={<Package className="w-5 h-5 text-blue-400" />}
+          gradient="from-blue-600/20 to-blue-900/10" border="border-blue-500/20" />
+        <StatCard title="Altas este mes"
+          value={createdData[createdData.length - 1]?.altas || 0}
+          icon={<TrendingUp className="w-5 h-5 text-green-400" />}
+          gradient="from-green-600/20 to-green-900/10" border="border-green-500/20" />
+        <StatCard title="Bajas este mes"
+          value={retiredData[retiredData.length - 1]?.bajas || 0}
+          icon={<Activity className="w-5 h-5 text-red-400" />}
+          gradient="from-red-600/20 to-red-900/10" border="border-red-500/20" />
+        <StatCard title="Valor inventario"
+          value={`${(valueData[valueData.length - 1]?.valor || 0).toLocaleString('es-ES')} €`}
+          icon={<TrendingUp className="w-5 h-5 text-purple-400" />}
+          gradient="from-purple-600/20 to-purple-900/10" border="border-purple-500/20" />
+      </div>
+
+      {/* Altas y Bajas por mes */}
+      {monthlyData.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <h3 className="text-sm font-semibold text-white mb-5 flex items-center gap-2">
+            <BarChart2 className="w-4 h-4 text-blue-400" /> Altas y bajas por mes
+          </h3>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={monthlyData} barGap={2}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend formatter={(v: string) => <span style={{ color: '#9ca3af', fontSize: 12 }}>{v}</span>} />
+              <Bar dataKey="altas" name="Altas" fill="#3b82f6" radius={[3,3,0,0]} />
+              <Bar dataKey="bajas" name="Bajas" fill="#ef4444" radius={[3,3,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Crecimiento acumulado */}
+        {cumulativeData.length > 0 && (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-white mb-5 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-green-400" /> Activos totales acumulados
+            </h3>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={cumulativeData}>
+                <defs>
+                  <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip content={<CustomTooltip />} />
+                <Area type="monotone" dataKey="total" name="Total activos" stroke="#3b82f6" strokeWidth={2}
+                  fill="url(#colorTotal)" dot={{ fill: '#3b82f6', r: 3 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* Valor acumulado */}
+        {valueData.length > 0 && (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-white mb-5 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-purple-400" /> Valor del inventario (€)
+            </h3>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={valueData}>
+                <defs>
+                  <linearGradient id="colorValor" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false}
+                  tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
+                <Tooltip content={<CustomTooltip />} />
+                <Area type="monotone" dataKey="valor" name="Valor acumulado" stroke="#8b5cf6" strokeWidth={2}
+                  fill="url(#colorValor)" dot={{ fill: '#8b5cf6', r: 3 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Por categoría */}
+        {categoryData.length > 0 && (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-white mb-5 flex items-center gap-2">
+              <Package className="w-4 h-4 text-cyan-400" /> Distribución por categoría
+            </h3>
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={categoryData} cx="50%" cy="50%" outerRadius={80} dataKey="value"
+                  label={(props: any) => `${props.name} ${((props.percent||0)*100).toFixed(0)}%`}
+                  labelLine={{ stroke: '#6b7280' }}>
+                  {categoryData.map((_: any, i: number) => (
+                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* Por estado */}
+        {statusData.length > 0 && (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-white mb-5 flex items-center gap-2">
+              <Activity className="w-4 h-4 text-green-400" /> Estado del parque tecnológico
+            </h3>
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={statusData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value"
+                  paddingAngle={3}>
+                  {statusData.map((s: any, i: number) => (
+                    <Cell key={i} fill={
+                      s.name === 'Activo'     ? '#10b981' :
+                      s.name === 'Baja'       ? '#ef4444' :
+                      s.name === 'Reparación' ? '#f59e0b' : '#6b7280'
+                    } />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+                <Legend formatter={(v: string) => <span style={{ color: '#9ca3af', fontSize: 12 }}>{v}</span>} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
 const VIEWS: { id: ViewMode; label: string; icon: React.ReactNode }[] = [
-  { id: 'general',    label: 'General',        icon: <Activity className="w-4 h-4" /> },
-  { id: 'hardware',   label: 'Hardware',        icon: <Package className="w-4 h-4" /> },
-  { id: 'software',   label: 'Software',        icon: <Package2 className="w-4 h-4" /> },
-  { id: 'services',   label: 'Servicios',       icon: <Globe className="w-4 h-4" /> },
-  { id: 'department', label: 'Departamentos',   icon: <Building2 className="w-4 h-4" /> },
+  { id: 'general',     label: 'General',       icon: <Activity className="w-4 h-4" /> },
+  { id: 'hardware',    label: 'Hardware',       icon: <Package className="w-4 h-4" /> },
+  { id: 'software',    label: 'Software',       icon: <Package2 className="w-4 h-4" /> },
+  { id: 'services',    label: 'Servicios',      icon: <Globe className="w-4 h-4" /> },
+  { id: 'department',  label: 'Departamentos',  icon: <Building2 className="w-4 h-4" /> },
+  { id: 'tendencias',  label: 'Tendencias',     icon: <TrendingUp className="w-4 h-4" /> },
 ];
 
 export default function DashboardPage() {
@@ -938,6 +1163,7 @@ export default function DashboardPage() {
           {view === 'software'   && <SoftwareView   software={software} />}
           {view === 'services'   && <ServicesView   services={services} />}
           {view === 'department' && <DepartmentView assets={assets} software={software} services={services} />}
+          {view === 'tendencias' && <TrendsView />}
         </>
       )}
     </div>
