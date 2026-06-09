@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, User, FileText, ExternalLink } from 'lucide-react';
+import { X, Save, User, FileText, ExternalLink, History } from 'lucide-react';
 import { Asset, AssetCategory, AssetStatus, ClientUser } from '../types';
 import DocumentsPanel from './DocumentsPanel';
 import AssetUsersPanel from './AssetUsersPanel';
+import AuditLogPanel from './AuditLogPanel';
 import { useCategories } from '../context/CategoriesContext';
 import { apiClient } from '../api/client';
 import toast from 'react-hot-toast';
@@ -317,7 +318,9 @@ export default function AssetForm({ asset, onSave, onClose, isEdit }: AssetFormP
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
           <h2 className="text-lg font-semibold text-white">{isEdit ? 'Editar Activo' : 'Nuevo Activo'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+          </div>
         </div>
 
         {/* Formulario */}
@@ -427,9 +430,11 @@ export default function AssetForm({ asset, onSave, onClose, isEdit }: AssetFormP
 
           {isEdit && asset && <AssetUsersPanel assetId={asset.id} />}
           {isEdit && asset && <DeliveryRecordsPanel assetId={asset.id} />}
+          {isEdit && asset && <AuditLogPanel assetId={asset.id} />}
           {isEdit && asset && (
             <div className="mt-5"><DocumentsPanel serial={asset.serial_number} /></div>
           )}
+
 
         </form>
 
