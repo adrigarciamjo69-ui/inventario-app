@@ -51,7 +51,7 @@ const emptyForm = {
   purchase_order: '', price: 0,
   status: 'activo' as SoftwareStatus, notes: '',
 };
-​
+
 // -- Checkbox ------------------------------------------------------------------
 function Checkbox({ checked, indeterminate, onChange }: {
   checked: boolean; indeterminate?: boolean; onChange: () => void;
@@ -67,7 +67,7 @@ function Checkbox({ checked, indeterminate, onChange }: {
     </button>
   );
 }
-​
+
 // -- Field ---------------------------------------------------------------------
 function Field({ label, children, error }: { label: string; children: React.ReactNode; error?: string }) {
   return (
@@ -81,7 +81,7 @@ function Field({ label, children, error }: { label: string; children: React.Reac
 ​
 const ic = (err?: string) =>
   `w-full bg-gray-800 border ${err ? 'border-red-500' : 'border-gray-700'} rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors`;
-​
+
 // -- Panel de vínculos ---------------------------------------------------------
 interface LinksPanelProps {
   software: Software;
@@ -332,7 +332,7 @@ function LinksPanel({ software, canEdit, onRefresh }: LinksPanelProps) {
     </div>
   );
 }
-​
+
 // -- Modal de formulario -------------------------------------------------------
 interface SoftwareFormProps {
   software?: Software | null;
@@ -498,7 +498,7 @@ function SoftwareFormModal({ software, onSave, onClose, isEdit, canEdit }: Softw
     </div>
   );
 }
-​
+
 // -- Página principal ----------------------------------------------------------
 export default function SoftwarePage() {
   const { user } = useAuth();
@@ -517,7 +517,7 @@ export default function SoftwarePage() {
   const [editSw, setEditSw]           = useState<Software | null>(null);
   const [deleteModal, setDeleteModal] = useState<Software | null>(null);
   const [deleting, setDeleting]       = useState(false);
-​
+  
   // -- Selección múltiple ------------------------------------------------------
   const [selected, setSelected]           = useState<Set<number>>(new Set());
   const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
