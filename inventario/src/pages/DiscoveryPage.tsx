@@ -582,8 +582,8 @@ export default function DiscoveryPage() {
                 <textarea value={netForm.notes} rows={2} onChange={(e) => setNetForm((f) => ({ ...f, notes: e.target.value }))} className={inputCls + ' resize-none'} />
               </div>
               <label className="flex items-center gap-2 cursor-pointer select-none">
-                <button type="button" onClick={() => setNetForm((f) => ({ ...f, enabled: !f.enabled }))} className={`relative w-10 h-5 rounded-full transition-colors ${netForm.enabled ? 'bg-blue-600' : 'bg-gray-700'}`}>
-                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${netForm.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                <button type="button" role="switch" aria-checked={netForm.enabled} onClick={() => setNetForm((f) => ({ ...f, enabled: !f.enabled }))} className={`relative inline-flex items-center shrink-0 w-11 h-6 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${netForm.enabled ? 'bg-blue-600' : 'bg-gray-600'}`}>
+                  <span className={`inline-block w-5 h-5 rounded-full bg-white shadow transform transition-transform ${netForm.enabled ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
                 </button>
                 <span className="text-sm text-gray-300 flex items-center gap-1"><Power className="w-3.5 h-3.5" /> Red activa para escaneo</span>
               </label>
