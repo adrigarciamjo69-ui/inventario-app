@@ -318,6 +318,7 @@ function wmiEnrich(host, cred, secret, { timeoutMs = 25000 } = {}) {
       let errMsg = null;
       let stage = null;
       let trace = null;
+      let impv = null;
       if (err && err.trim()) {
         try {
           const j = JSON.parse(err.trim().split(/\r?\n/).pop());
@@ -325,11 +326,13 @@ function wmiEnrich(host, cred, secret, { timeoutMs = 25000 } = {}) {
             errMsg = j.error;
             stage = j.stage || null;
             trace = j.trace || null;
+            impv = j.impacket || null;
           }
         } catch (_) { errMsg = err.trim().slice(0, 200); }
       }
-      // Etiqueta el error con la fase para que el usuario sepa donde fallo
-      const composed = stage ? `[${stage}] ${errMsg}` : errMsg;
+      // Etiqueta el error con la fase + version de impacket para diagnostico
+      let composed = stage ? `[${stage}] ${errMsg}` : errMsg;
+      if (impv) composed = `${composed} (impacket ${impv})`;
       if (errMsg) {
         try {
           console.warn(`[scan][wmi] ${host.ip}: ${composed}`);
