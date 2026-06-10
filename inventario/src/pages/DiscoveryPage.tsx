@@ -48,6 +48,13 @@ interface ScanJob {
   imported_count?: number;
 }
 
+interface EnrichAttempt {
+  method: string;
+  cred?: string;
+  ok: boolean;
+  error?: string | null;
+}
+
 interface ScanResult {
   id: number;
   job_id: number;
@@ -64,6 +71,7 @@ interface ScanResult {
   enrich_method?: string | null;
   matched_asset_id?: string | null;
   imported: boolean;
+  raw?: { attempts?: EnrichAttempt[]; [key: string]: unknown } | null;
 }
 
 // Fila editable en la revision previa.
@@ -88,6 +96,7 @@ interface ReviewRow {
   enrich_method?: string | null;
   matched_asset_id?: string | null;
   imported: boolean;
+  attempts?: EnrichAttempt[];
 }
 
 const CRED_META: Record<CredType, {
@@ -256,6 +265,7 @@ export default function DiscoveryPage() {
       hostname: r.hostname,
       os: r.os,
       open_ports: r.open_ports,
+      attempts: (r.raw && Array.isArray((r.raw as any).attempts)) ? (r.raw as any).attempts as EnrichAttempt[] : [],
       enrich_method: r.enrich_method,
       matched_asset_id: r.matched_asset_id,
       imported: r.imported,
@@ -486,7 +496,7 @@ export default function DiscoveryPage() {
                           <select value={credForm.type} onChange={(e) => setCredForm((f) => ({ ...f, type: e.target.value as CredType }))} className={inputCls}>
                             <option value="ssh">SSH (Linux/Unix)</option>
                             <option value="snmp">SNMP (red/impresoras)</option>
-                            <option value="winrm">WinRM (Windows)</option>
+                            <option value="winrm">Windows (WMI / SMB / WinRM)</option>
                           </select>
                         </div>
                         <div>
@@ -679,6 +689,22 @@ export default function DiscoveryPage() {
                                 )}
                               </div>
                               {r.os && <p className="text-gray-600 text-[10px] mt-0.5 truncate" title={r.os}>{r.os}</p>}
+                              {r.open_ports && (
+                                <p className="text-gray-600 text-[10px] mt-0.5 truncate" title={`Puertos abiertos: ${r.open_ports}`}>
+                                  <span className="text-gray-500">puertos:</span> {r.open_ports}
+                                </p>
+                              )}
+                              {Array.isArray(r.attempts) && r.attempts.length > 0 && (
+                                <div className="mt-1 space-y-0.5">
+                                  {r.attempts.map((a, i) => (
+                                    <p key={i}
+                                       className={`text-[10px] truncate ${a.ok ? 'text-green-400' : 'text-red-400/80'}`}
+                                       title={`${a.method}${a.cred && a.cred !== '-' ? ' (' + a.cred + ')' : ''}: ${a.ok ? 'OK' : (a.error || 'fallo')}`}>
+                                      <span className="font-mono">{a.ok ? '✓' : '✗'}</span> {a.method}{a.cred && a.cred !== '-' ? ` · ${a.cred}` : ''}{!a.ok && a.error ? ` — ${a.error}` : ''}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </td>
                           <td className="p-2 align-top"><input className={cellCls} value={r.id} disabled={r.imported} onChange={(e) => setRow(idx, { id: e.target.value })} /></td>
