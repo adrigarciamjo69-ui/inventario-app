@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """WMI query helper para el backend de inventario (Fase 2 - opcion B).
 
-Usa impacket (python3-impacket) para hablar DCOM/RPC con un host Windows
-y extraer datos basicos del sistema (fabricante, modelo, n. serie, SO).
-Es el mismo metodo que utiliza Lansweeper para los equipos Windows.
+Usa impacket (PyPI >=0.12) para hablar DCOM/RPC con un host Windows y extraer
+datos basicos del sistema (fabricante, modelo, n. serie, SO). Es el mismo
+metodo que utiliza Lansweeper para los equipos Windows.
 
 Salida: una linea JSON en stdout con { hostname, vendor, model, serial, os }.
-En caso de error: stderr con JSON {error, stage, trace} y codigo de salida != 0.
+En caso de error: stderr con JSON {error, stage, impacket, trace} y exit != 0.
 
 Uso (desde scanner.js):
   python3 wmi_query.py --host 10.10.0.5 --user adminuser --password X \\
@@ -14,12 +14,19 @@ Uso (desde scanner.js):
 """
 import sys, json, argparse, signal, traceback
 
+# Version de impacket instalada (se incluye en errores para diagnosticar deploy)
+def _impacket_version():
+    try:
+        import impacket
+        return getattr(impacket, '__version__', '?')
+    except Exception:
+        return 'no-instalado'
+
 def fail(msg, code=1, stage=None, exc=None):
-    payload = {"error": str(msg)[:400]}
+    payload = {"error": str(msg)[:400], "impacket": _impacket_version()}
     if stage:
         payload["stage"] = stage
     if exc is not None:
-        # Trace compacto: solo las 4 ultimas frames
         tb_lines = traceback.format_exception(type(exc), exc, exc.__traceback__)
         compact = " | ".join(l.strip() for l in tb_lines if l.strip())[-500:]
         payload["trace"] = compact
@@ -41,7 +48,12 @@ def main():
     ap.add_argument('--password', default='')
     ap.add_argument('--domain', default='')
     ap.add_argument('--timeout', type=int, default=15)
+    ap.add_argument('--version', action='store_true', help='imprime version impacket y sale')
     args = ap.parse_args()
+
+    if args.version:
+        sys.stdout.write(json.dumps({"impacket": _impacket_version()}) + "\n")
+        sys.exit(0)
 
     # Watchdog global por si impacket se atasca
     def _timeout(signum, frame):
@@ -52,8 +64,15 @@ def main():
     try:
         from impacket.dcerpc.v5.dcomrt import DCOMConnection
         from impacket.dcerpc.v5.dcom import wmi
+        from impacket.dcerpc.v5.dtypes import NULL
     except ImportError as e:
-        fail("impacket no instalado: " + str(e), code=2, stage="import")
+        fail("impacket no importable: " + str(e), code=2, stage="import")
+
+    # Niveles de autenticacion RPC para endurecer la conexion DCOM.
+    try:
+        from impacket.dcerpc.v5.rpcrt import RPC_C_AUTHN_LEVEL_PKT_PRIVACY
+    except Exception:
+        RPC_C_AUTHN_LEVEL_PKT_PRIVACY = 6
 
     dcom = None
     iWbemServices = None
@@ -69,15 +88,32 @@ def main():
         stage = "cocreate"
         iInterface = dcom.CoCreateInstanceEx(wmi.CLSID_WbemLevel1Login, wmi.IID_IWbemLevel1Login)
         if iInterface is None:
-            fail("CoCreateInstanceEx devolvio None (DCOM/RPC bloqueado o sin permisos)", code=1, stage=stage)
+            fail("CoCreateInstanceEx devolvio None (DCOM/RPC bloqueado o sin permisos de activacion)",
+                 code=1, stage=stage)
 
         stage = "wbem_login"
         iWbemLevel1Login = wmi.IWbemLevel1Login(iInterface)
 
         stage = "ntlm_login"
-        iWbemServices = iWbemLevel1Login.NTLMLogin('\\\\.\\root\\cimv2', None, None)
+        # Namespace en formato canonico de impacket (wmiexec.py usa este).
+        try:
+            iWbemServices = iWbemLevel1Login.NTLMLogin('//./root/cimv2', NULL, NULL)
+        except Exception as e:
+            # impacket >=0.12 lanza excepcion con el fault RPC real; la 0.11
+            # a veces devuelve None y revienta con 'NoneType subscriptable'.
+            msg = str(e)
+            hint = ""
+            low = msg.lower()
+            if 'access_denied' in low or 'access denied' in low or 'e_accessdenied' in low:
+                hint = " -> permisos DCOM/WMI: la cuenta no tiene 'Remote Activation' o acceso a root/cimv2"
+            elif 'logon' in low or 'credential' in low or 'rpc_s_sec_pkg_error' in low:
+                hint = " -> credenciales rechazadas (usuario/dominio/contrasena)"
+            elif 'subscriptable' in low:
+                hint = " -> bug de impacket 0.11 (apt): el rebuild NO instalo impacket>=0.12 desde pip"
+            fail("NTLMLogin fallo: " + msg + hint, code=1, stage=stage, exc=e)
         if iWbemServices is None:
-            fail("NTLMLogin devolvio None (credenciales o WMI namespace no accesible)", code=1, stage=stage)
+            fail("NTLMLogin devolvio None (impacket 0.11 + Windows moderno: hace falta impacket>=0.12 via pip)",
+                 code=1, stage=stage)
         try:
             iWbemLevel1Login.RemRelease()
         except Exception:
@@ -90,7 +126,6 @@ def main():
                 it = iWbemServices.ExecQuery(sql)
                 if it is None:
                     return res
-                # it.Next devuelve una tupla (objetos, ...). Defensivo si es None.
                 try:
                     nxt = it.Next(0xffffffff, 1)
                 except Exception:
@@ -111,7 +146,6 @@ def main():
                     p = props.get(f) if isinstance(props, dict) else None
                     if p is None:
                         continue
-                    # p suele ser dict con clave 'value'
                     val = None
                     try:
                         if isinstance(p, dict):
@@ -124,7 +158,6 @@ def main():
                     if s:
                         res[f] = s
             except Exception:
-                # No abortamos por una query fallida; seguimos con las demas
                 return res
             finally:
                 if it is not None:
@@ -157,9 +190,8 @@ def main():
         os_parts = [s for s in [os_.get('Caption'), os_.get('Version'), os_.get('BuildNumber')] if s]
         out['os']       = ' '.join(os_parts).strip()
 
-        # Si TODO esta vacio reportamos error con la fase para poder diagnosticar
         if not any(out.values()):
-            fail("WMI conecto pero todas las consultas vinieron vacias (permisos WMI/CIM?)",
+            fail("WMI autentico pero todas las consultas vinieron vacias (permisos de lectura en root/cimv2?)",
                  code=1, stage="empty_result")
     except SystemExit:
         raise
