@@ -413,13 +413,48 @@ function guessCategory(host, enrich) {
   const os = ((enrich && enrich.os) || host.os || '').toLowerCase();
   const services = host.ports.map((p) => p.service || '').join(' ').toLowerCase();
   const vendor = (host.vendor || (enrich && enrich.vendor) || '').toLowerCase();
+  const model = ((enrich && enrich.model) || '').toLowerCase();
   const portSet = new Set(host.ports.map((p) => p.port));
-  if (portSet.has(9100) || services.includes('printer') || services.includes('jetdirect') ||
-      /hp|epson|brother|canon|lexmark|kyocera|ricoh|xerox/.test(vendor)) return 'printer';
-  if (os.includes('windows server')) return 'server';
-  if (os.includes('windows')) return 'desktop';
-  if (os.includes('linux') || os.includes('unix') || os.includes('bsd')) return 'server';
-  if (services.includes('ssh') && !os.includes('windows')) return 'server';
+
+  // Senales fuertes de IMPRESORA: puertos especificos o modelo claramente de impresora
+  const printerPorts   = portSet.has(9100) || portSet.has(515) || portSet.has(631);
+  const printerService = /printer|jetdirect|ipp|lpd/.test(services);
+  const printerModel   = /laserjet|officejet|deskjet|pagewide|smart\s?tank|ecotank|workforce|expression|stylus|pixma|imageclass|maxify|imagerunner|imageprograf|workcentre|versalink|altalink|phaser|aficio|bizhub|taskalfa|magicolor|color\s?cube|envy\s?photo|envy\s?pro\s?\d{3,}|brother\s?(hl|mfc|dcp)|lexmark\s?[a-z]+\d+/.test(model);
+
+  // Senales fuertes de PORTATIL
+  const laptopModel = /probook|elitebook|zbook|pavilion(?!\s+(printer|aio))|spectre|omen|envy\s?x360|envy\s?\d{2}\b|laptop|notebook|portatil|portable|thinkpad|ideapad|yoga|legion|latitude|inspiron|xps\s?(13|14|15|17)|precision\s?\d{4}\s?m|macbook|surface(?!\s+(hub|studio))|vivobook|zenbook|expertbook|swift|aspire(?!\s+aio)|nitro|predator(?!\s+orion)|tuf\s?gaming|rog\s?(strix|zephyrus|flow|ally)|chromebook|gram/.test(model);
+
+  // Senales fuertes de SOBREMESA
+  const desktopModel = /optiplex|thinkcentre|thinkstation|elitedesk|prodesk|workstation|imac|mac\s?mini|mac\s?pro|mac\s?studio|nuc|veriton|aspire\s?aio|pavilion\s+aio|all-in-one|desktop|tower/.test(model);
+
+  const hasComputerOS = /windows|linux|unix|bsd|macos|mac\s?os|darwin/.test(os);
+  const isWindowsServer = /windows\s+server/.test(os);
+
+  // 1) Si tiene SO de ordenador, es un equipo (NO impresora aunque sea HP/Canon)
+  if (hasComputerOS) {
+    if (isWindowsServer) return 'server';
+    if (laptopModel)  return 'laptop';
+    if (desktopModel) return 'desktop';
+    // SO Linux/Unix sin pistas de modelo -> probablemente servidor
+    if (/linux|unix|bsd/.test(os)) return 'server';
+    // Windows sin modelo claro -> sobremesa por defecto
+    return 'desktop';
+  }
+
+  // 2) Sin SO de ordenador: senales fuertes de impresora ganan
+  if (printerPorts || printerService || printerModel) return 'printer';
+
+  // 3) Sin SO ni puertos de impresora: por modelo
+  if (laptopModel)  return 'laptop';
+  if (desktopModel) return 'desktop';
+
+  // 4) Ultimo recurso por fabricante (solo impresoras tipicas y SIN otras pistas)
+  if (/epson|brother|kyocera|ricoh|xerox|konica|sharp|lexmark/.test(vendor) && !hasComputerOS) {
+    return 'printer';
+  }
+  // HP/Canon fabrican de todo -> NO clasificar como impresora solo por fabricante
+
+  if (services.includes('ssh')) return 'server';
   return 'other';
 }
 
