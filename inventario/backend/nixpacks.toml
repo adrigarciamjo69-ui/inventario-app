@@ -1,13 +1,20 @@
 # Nixpacks - configuracion de build del backend en Dokploy.
-# Anade el binario 'nmap' (necesario para el descubrimiento de red, Fase 2)
-# manteniendo la autodeteccion de Node de Nixpacks.
 #
-# Alternativa equivalente sin este fichero: definir la variable de entorno
-#   NIXPACKS_APT_PKGS=nmap
-# en la configuracion del servicio de Dokploy.
+# Instala los binarios necesarios manteniendo la autodeteccion de Node:
+#   nmap        -> descubrimiento de red (Fase 2)
+#   python3     -> runtime para el helper de WMI (wmi_query.py)
+#   python3-pip -> para instalar impacket desde PyPI
+#
+# IMPORTANTE: usamos impacket desde PyPI en lugar del apt 'python3-impacket'
+# porque el paquete apt (0.11.x) tiene un bug en NTLMLogin que rompe contra
+# Windows 10/11 modernos (error: 'NoneType' object is not subscriptable).
+# Desde 0.12 ese bug esta corregido. Es el mismo metodo que usa Lansweeper.
 
 [phases.setup]
-# nmap          -> descubrimiento de red (Fase 2)
-# python3       -> runtime para el helper de WMI (wmi_query.py)
-# python3-impacket -> libreria WMI/DCOM (mismo metodo que usa Lansweeper)
-aptPkgs = ["nmap", "python3", "python3-impacket"]
+aptPkgs = ["nmap", "python3", "python3-pip"]
+
+[phases.install-impacket]
+dependsOn = ["setup"]
+cmds = [
+  "python3 -m pip install --break-system-packages --no-cache-dir 'impacket>=0.12' || python3 -m pip install --no-cache-dir 'impacket>=0.12'"
+]
