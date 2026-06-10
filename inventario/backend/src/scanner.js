@@ -314,20 +314,30 @@ function wmiEnrich(host, cred, secret, { timeoutMs = 25000 } = {}) {
     proc.on('error', (e) => { clearTimeout(timer); resolve({ data: null, error: 'python: ' + e.message }); });
     proc.on('close', (code) => {
       clearTimeout(timer);
-      // Recoge la razon del fallo del stderr (el helper imprime JSON {error})
+      // Recoge la razon del fallo del stderr (el helper imprime JSON {error,stage,trace})
       let errMsg = null;
+      let stage = null;
+      let trace = null;
       if (err && err.trim()) {
         try {
           const j = JSON.parse(err.trim().split(/\r?\n/).pop());
-          if (j && j.error) errMsg = j.error;
+          if (j && j.error) {
+            errMsg = j.error;
+            stage = j.stage || null;
+            trace = j.trace || null;
+          }
         } catch (_) { errMsg = err.trim().slice(0, 200); }
       }
+      // Etiqueta el error con la fase para que el usuario sepa donde fallo
+      const composed = stage ? `[${stage}] ${errMsg}` : errMsg;
       if (errMsg) {
-        // tambien al log del backend para verlo en Dokploy
-        try { console.warn(`[scan][wmi] ${host.ip}: ${errMsg}`); } catch (_) {}
+        try {
+          console.warn(`[scan][wmi] ${host.ip}: ${composed}`);
+          if (trace) console.warn(`[scan][wmi][trace] ${host.ip}: ${trace}`);
+        } catch (_) {}
       }
       if (code !== 0 || !out.trim()) {
-        return resolve({ data: null, error: errMsg || ('exit code ' + code) });
+        return resolve({ data: null, error: composed || ('exit code ' + code) });
       }
       try {
         const lastLine = out.trim().split(/\r?\n/).pop();
