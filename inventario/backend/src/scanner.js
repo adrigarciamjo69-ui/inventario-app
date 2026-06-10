@@ -145,17 +145,18 @@ function execSsh(conn, cmd) {
 
 function sshEnrich(host, cred, secret) {
   const ssh2 = tryRequire('ssh2');
-  if (!ssh2 || !ssh2.Client) return Promise.resolve(null);
+  if (!ssh2 || !ssh2.Client) return Promise.resolve({ data: null, error: 'ssh2 no instalado' });
   return new Promise((resolve) => {
     const conn = new ssh2.Client();
     let done = false;
-    const finish = (val) => {
+    let lastErr = null;
+    const finish = (data, err) => {
       if (done) return;
       done = true;
       try { conn.end(); } catch (_) {}
-      resolve(val);
+      resolve({ data, error: err || lastErr });
     };
-    const timer = setTimeout(() => finish(null), 18000);
+    const timer = setTimeout(() => finish(null, 'timeout'), 18000);
     conn.on('ready', async () => {
       try {
         // /sys/class/dmi/id/* suele ser legible sin root para vendor/model.
@@ -174,13 +175,17 @@ function sshEnrich(host, cred, secret) {
           if (!v || /to be filled|not specified|none|^o\.?e\.?m\.?$/i.test(v)) delete data[k];
           else data[k] = v;
         }
-        finish(Object.keys(data).length ? data : null);
-      } catch (_) {
+        finish(Object.keys(data).length ? data : null, Object.keys(data).length ? null : 'sin datos');
+      } catch (e) {
         clearTimeout(timer);
-        finish(null);
+        finish(null, 'exec: ' + (e && e.message || e));
       }
     });
-    conn.on('error', () => { clearTimeout(timer); finish(null); });
+    conn.on('error', (e) => {
+      lastErr = e && e.message ? e.message : String(e);
+      clearTimeout(timer);
+      finish(null, lastErr);
+    });
     try {
       conn.connect({
         host: host.ip,
@@ -188,12 +193,10 @@ function sshEnrich(host, cred, secret) {
         username: cred.username || 'root',
         password: secret || undefined,
         readyTimeout: 12000,
-        // Algunos equipos antiguos requieren algoritmos heredados; ssh2 los
-        // negocia automaticamente, pero limitamos el tiempo de espera.
       });
-    } catch (_) {
+    } catch (e) {
       clearTimeout(timer);
-      finish(null);
+      finish(null, 'connect: ' + (e && e.message || e));
     }
   });
 }
@@ -202,35 +205,34 @@ function sshEnrich(host, cred, secret) {
 
 function snmpEnrich(host, cred, secret) {
   const snmp = tryRequire('net-snmp');
-  if (!snmp) return Promise.resolve(null);
+  if (!snmp) return Promise.resolve({ data: null, error: 'net-snmp no instalado' });
   return new Promise((resolve) => {
     let done = false;
     let session;
-    const finish = (v) => {
+    const finish = (data, err) => {
       if (done) return;
       done = true;
       try { session && session.close(); } catch (_) {}
-      resolve(v);
+      resolve({ data, error: err });
     };
-    const timer = setTimeout(() => finish(null), 9000);
+    const timer = setTimeout(() => finish(null, 'timeout'), 9000);
     try {
       const community = secret || cred.username || 'public';
       session = snmp.createSession(host.ip, community, { timeout: 4000, retries: 1 });
-      // sysName (1.3.6.1.2.1.1.5.0) y sysDescr (1.3.6.1.2.1.1.1.0)
       const oids = ['1.3.6.1.2.1.1.5.0', '1.3.6.1.2.1.1.1.0'];
       session.get(oids, (error, varbinds) => {
         clearTimeout(timer);
-        if (error) return finish(null);
+        if (error) return finish(null, error.message || String(error));
         const data = {};
         try {
           if (varbinds[0] && !snmp.isVarbindError(varbinds[0])) data.hostname = varbinds[0].value.toString();
           if (varbinds[1] && !snmp.isVarbindError(varbinds[1])) data.os = varbinds[1].value.toString();
         } catch (_) {}
-        finish(Object.keys(data).length ? data : null);
+        finish(Object.keys(data).length ? data : null, Object.keys(data).length ? null : 'sin datos');
       });
-    } catch (_) {
+    } catch (e) {
       clearTimeout(timer);
-      finish(null);
+      finish(null, e.message || String(e));
     }
   });
 }
@@ -254,12 +256,12 @@ function smbNmapEnrich(host, cred, secret, { timeoutMs = 30000 } = {}) {
     }
     let proc;
     try { proc = spawn('nmap', args); }
-    catch (_) { return resolve(null); }
-    let out = '';
-    const timer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch (_) {} resolve(null); }, timeoutMs);
+    catch (e) { return resolve({ data: null, error: 'nmap: ' + e.message }); }
+    let out = '', err = '';
+    const timer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch (_) {} resolve({ data: null, error: 'timeout' }); }, timeoutMs);
     proc.stdout.on('data', (d) => { out += d.toString(); });
-    proc.stderr.on('data', () => {});
-    proc.on('error', () => { clearTimeout(timer); resolve(null); });
+    proc.stderr.on('data', (d) => { err += d.toString(); });
+    proc.on('error', (e) => { clearTimeout(timer); resolve({ data: null, error: 'nmap: ' + e.message }); });
     proc.on('close', () => {
       clearTimeout(timer);
       const elems = {};
@@ -272,8 +274,13 @@ function smbNmapEnrich(host, cred, secret, { timeoutMs = 30000 } = {}) {
       if (elems.fqdn) data.hostname = elems.fqdn;
       else if (elems.netbios_computer_name) data.hostname = elems.netbios_computer_name;
       else if (elems.server) data.hostname = elems.server;
-      // smb-os-discovery no aporta nº de serie ni modelo; eso queda para WMI.
-      resolve(Object.keys(data).length ? data : null);
+      if (Object.keys(data).length) return resolve({ data, error: null });
+      // Pista del fallo si smb-os-discovery no devolvio info
+      let why = 'smb sin datos';
+      if (/STATUS_LOGON_FAILURE|NT_STATUS_LOGON_FAILURE/i.test(err) || /STATUS_LOGON_FAILURE/i.test(out)) why = 'credenciales rechazadas';
+      else if (/STATUS_ACCESS_DENIED/i.test(out + err)) why = 'acceso denegado';
+      else if (/Filtered|filtered/.test(out)) why = 'puerto filtrado';
+      resolve({ data: null, error: why });
     });
   });
 }
@@ -283,6 +290,7 @@ function smbNmapEnrich(host, cred, secret, { timeoutMs = 30000 } = {}) {
 // con el host Windows. Es el mismo metodo que usa Lansweeper, funciona aunque
 // WinRM este cerrado siempre que el puerto 135 (+ RPC dinamico) este abierto.
 
+// Devuelve { data, error }. data!=null si el enriquecimiento funciono.
 function wmiEnrich(host, cred, secret, { timeoutMs = 25000 } = {}) {
   return new Promise((resolve) => {
     const script = path.join(__dirname, 'wmi_query.py');
@@ -298,20 +306,33 @@ function wmiEnrich(host, cred, secret, { timeoutMs = 25000 } = {}) {
       proc = spawn('python3', args, {
         env: { ...process.env, PYTHONUNBUFFERED: '1' },
       });
-    } catch (_) { return resolve(null); }
-    let out = '';
-    const timer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch (_) {} resolve(null); }, timeoutMs);
+    } catch (e) { return resolve({ data: null, error: 'no se pudo lanzar python: ' + e.message }); }
+    let out = '', err = '';
+    const timer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch (_) {} resolve({ data: null, error: 'timeout' }); }, timeoutMs);
     proc.stdout.on('data', (d) => { out += d.toString(); });
-    proc.stderr.on('data', () => {});
-    proc.on('error', () => { clearTimeout(timer); resolve(null); });
+    proc.stderr.on('data', (d) => { err += d.toString(); });
+    proc.on('error', (e) => { clearTimeout(timer); resolve({ data: null, error: 'python: ' + e.message }); });
     proc.on('close', (code) => {
       clearTimeout(timer);
-      if (code !== 0 || !out.trim()) return resolve(null);
+      // Recoge la razon del fallo del stderr (el helper imprime JSON {error})
+      let errMsg = null;
+      if (err && err.trim()) {
+        try {
+          const j = JSON.parse(err.trim().split(/\r?\n/).pop());
+          if (j && j.error) errMsg = j.error;
+        } catch (_) { errMsg = err.trim().slice(0, 200); }
+      }
+      if (errMsg) {
+        // tambien al log del backend para verlo en Dokploy
+        try { console.warn(`[scan][wmi] ${host.ip}: ${errMsg}`); } catch (_) {}
+      }
+      if (code !== 0 || !out.trim()) {
+        return resolve({ data: null, error: errMsg || ('exit code ' + code) });
+      }
       try {
-        // El script imprime una sola linea JSON al final
         const lastLine = out.trim().split(/\r?\n/).pop();
         const j = JSON.parse(lastLine);
-        if (!j || j.error) return resolve(null);
+        if (!j || j.error) return resolve({ data: null, error: (j && j.error) || 'wmi sin datos' });
         const data = {};
         for (const k of ['hostname', 'vendor', 'model', 'serial', 'os']) {
           const v = (j[k] || '').toString().trim();
@@ -319,9 +340,10 @@ function wmiEnrich(host, cred, secret, { timeoutMs = 25000 } = {}) {
             data[k] = v;
           }
         }
-        return resolve(Object.keys(data).length ? data : null);
-      } catch (_) {
-        return resolve(null);
+        if (Object.keys(data).length) return resolve({ data, error: null });
+        return resolve({ data: null, error: 'wmi sin campos utiles' });
+      } catch (e) {
+        return resolve({ data: null, error: 'parse: ' + e.message });
       }
     });
   });
@@ -334,7 +356,7 @@ function wmiEnrich(host, cred, secret, { timeoutMs = 25000 } = {}) {
 
 async function winrmEnrich(host, cred, secret) {
   const winrm = tryRequire('nodejs-winrm');
-  if (!winrm || !winrm.shell || !winrm.command) return null;
+  if (!winrm || !winrm.shell || !winrm.command) return { data: null, error: 'nodejs-winrm no disponible' };
   const auth = 'Basic ' + Buffer.from(`${cred.username || 'Administrator'}:${secret || ''}`).toString('base64');
   const params = {
     host: host.ip,
@@ -364,9 +386,11 @@ async function winrmEnrich(host, cred, secret) {
       if (!v || /serialnumber|model|manufacturer|caption/i.test(v)) delete data[k];
       else data[k] = v;
     }
-    return Object.keys(data).length ? data : null;
-  } catch (_) {
-    return null;
+    return Object.keys(data).length
+      ? { data, error: null }
+      : { data: null, error: 'winrm sin datos utiles' };
+  } catch (e) {
+    return { data: null, error: (e && e.message ? e.message : String(e)).slice(0, 200) };
   }
 }
 
@@ -419,50 +443,76 @@ async function scanNetwork(network, credentials) {
   for (const host of hosts) {
     const openPorts = new Set(host.ports.map((p) => p.port));
     const hasWinPort = [135, 139, 445, 3389, 5985].some((p) => openPorts.has(p));
+    const attempts = []; // [{ method, ok, error, cred }]
     let enrich = null;
     let method = null;
 
+    // Helper: ejecuta un enriquecimiento y registra el intento.
+    // fn debe devolver el objeto de datos o { data, error } (o null).
+    const tryEnrich = async (m, credLabel, fn) => {
+      let data = null, error = null;
+      try {
+        const r = await fn();
+        if (r && typeof r === 'object' && ('data' in r || 'error' in r)) {
+          data = r.data; error = r.error;
+        } else {
+          data = r;
+        }
+      } catch (e) {
+        error = (e && e.message) ? e.message : String(e);
+      }
+      attempts.push({
+        method: m,
+        cred: credLabel,
+        ok: !!(data && Object.keys(data).length),
+        error: error ? String(error).slice(0, 200) : (data ? null : 'sin datos'),
+      });
+      return data && Object.keys(data).length ? data : null;
+    };
+
     for (const cred of credentials) {
       if (enrich) break;
+      const credLabel = cred.label || `${cred.type}#${cred.id}`;
       let secret = null;
       try { secret = cred.secret_encrypted ? decrypt(cred.secret_encrypted) : null; } catch (_) { secret = null; }
-      try {
-        if (cred.type === 'ssh' && openPorts.has(cred.port || 22)) {
-          enrich = await sshEnrich(host, cred, secret);
-          if (enrich) method = 'ssh';
-        } else if (cred.type === 'snmp') {
-          enrich = await snmpEnrich(host, cred, secret);
-          if (enrich) method = 'snmp';
-        } else if (cred.type === 'winrm' && hasWinPort) {
-          // Orden para Windows: WMI -> SMB-NSE -> WinRM.
-          // WMI (135 + RPC dinamico) es el metodo que usa Lansweeper y suele
-          // estar disponible aunque WinRM (5985) este cerrado por defecto.
-          if (openPorts.has(135) || openPorts.has(445)) {
-            enrich = await wmiEnrich(host, cred, secret);
-            if (enrich) method = 'wmi';
-          }
-          if (!enrich && (openPorts.has(445) || openPorts.has(139))) {
-            enrich = await smbNmapEnrich(host, cred, secret);
-            if (enrich) method = 'smb';
-          }
-          if (!enrich && openPorts.has(cred.port || 5985)) {
-            enrich = await winrmEnrich(host, cred, secret);
-            if (enrich) method = 'winrm';
-          }
+
+      if (cred.type === 'ssh' && openPorts.has(cred.port || 22)) {
+        enrich = await tryEnrich('ssh', credLabel, () => sshEnrich(host, cred, secret));
+        if (enrich) method = 'ssh';
+      } else if (cred.type === 'snmp') {
+        enrich = await tryEnrich('snmp', credLabel, () => snmpEnrich(host, cred, secret));
+        if (enrich) method = 'snmp';
+      } else if (cred.type === 'winrm' && hasWinPort) {
+        // Orden para Windows: WMI -> SMB-NSE -> WinRM.
+        if (openPorts.has(135) || openPorts.has(445)) {
+          enrich = await tryEnrich('wmi', credLabel, () => wmiEnrich(host, cred, secret));
+          if (enrich) method = 'wmi';
+        } else {
+          attempts.push({ method: 'wmi', cred: credLabel, ok: false, error: 'puerto 135/445 cerrado' });
         }
-      } catch (_) {
-        enrich = null;
+        if (!enrich && (openPorts.has(445) || openPorts.has(139))) {
+          enrich = await tryEnrich('smb', credLabel, () => smbNmapEnrich(host, cred, secret));
+          if (enrich) method = 'smb';
+        }
+        if (!enrich && openPorts.has(cred.port || 5985)) {
+          enrich = await tryEnrich('winrm', credLabel, () => winrmEnrich(host, cred, secret));
+          if (enrich) method = 'winrm';
+        } else if (!enrich && !openPorts.has(cred.port || 5985)) {
+          attempts.push({ method: 'winrm', cred: credLabel, ok: false, error: 'puerto 5985 cerrado' });
+        }
       }
     }
 
-    // Fallback anonimo: si el host parece Windows y nada funciono con
-    // credenciales, probar smb-os-discovery sin auth (suele dar hostname/SO).
+    // Fallback anonimo: smb-os-discovery sin credenciales.
     if (!enrich && hasWinPort && (openPorts.has(445) || openPorts.has(139))) {
-      enrich = await smbNmapEnrich(host, null, null);
+      enrich = await tryEnrich('smb-anon', '-', () => smbNmapEnrich(host, null, null));
       if (enrich) method = 'smb-anon';
     }
 
-    results.push(buildResult(host, enrich, method));
+    const result = buildResult(host, enrich, method);
+    // Guardar diagnostico para mostrar en la UI.
+    result.raw = { ...(result.raw || {}), attempts };
+    results.push(result);
   }
 
   return results;
