@@ -353,6 +353,12 @@ function wmiEnrich(host, cred, secret, { timeoutMs = 25000 } = {}) {
             data[k] = v;
           }
         }
+        // Bloque detallado del equipo (CPU/RAM/discos/red/AD...). Se preserva
+        // tal cual viene del helper Python para volcarlo en scan_results.system_info
+        // y, al importar, en asset_system_info.scanned_data.
+        if (j.system_info && typeof j.system_info === 'object') {
+          data.system_info = j.system_info;
+        }
         if (Object.keys(data).length) return resolve({ data, error: null });
         return resolve({ data: null, error: 'wmi sin campos utiles' });
       } catch (e) {
