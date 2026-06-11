@@ -51,12 +51,32 @@ async function runSchedule(schedule) {
       if (!matched) newOnes.push(r);
       await pool.query(
         `INSERT INTO scan_results
-           (job_id, ip, mac, hostname, vendor, os, open_ports, serial_number, brand, model, category, enrich_method, raw, matched_asset_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+           (job_id, ip, mac, hostname, vendor, os, open_ports, serial_number, brand, model, category, enrich_method, raw, matched_asset_id, system_info)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
         [jobId, r.ip, r.mac, r.hostname, r.vendor, r.os, r.open_ports,
          r.serial_number, r.brand, r.model, r.category || 'other',
-         r.enrich_method, JSON.stringify(r.raw || {}), matched]
+         r.enrich_method, JSON.stringify(r.raw || {}), matched,
+         r.system_info ? JSON.stringify(r.system_info) : null]
       );
+      // Si el equipo ya estaba inventariado (matched) y trae bloque
+      // system_info, refrescamos asset_system_info preservando las notas
+      // manuales del usuario (mismo upsert que usa scan.js manual).
+      if (matched && r.system_info) {
+        try {
+          await pool.query(
+            `INSERT INTO asset_system_info (asset_id, scanned_data, scanned_at, source, updated_at)
+             VALUES ($1, $2, NOW(), $3, NOW())
+             ON CONFLICT (asset_id) DO UPDATE SET
+               scanned_data = EXCLUDED.scanned_data,
+               scanned_at   = EXCLUDED.scanned_at,
+               source       = EXCLUDED.source,
+               updated_at   = NOW()`,
+            [matched, JSON.stringify(r.system_info), r.enrich_method || null]
+          );
+        } catch (e) {
+          console.warn('[scheduler] asset_system_info upsert fallo:', e.message);
+        }
+      }
     }
     await pool.query(
       `UPDATE scan_jobs SET status='completed', finished_at=NOW(), hosts_found=$1 WHERE id=$2`,
