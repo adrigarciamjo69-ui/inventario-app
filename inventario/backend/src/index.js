@@ -1,0 +1,430 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const { pool } = require('./db');
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middleware
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || '*',
+  credentials: true,
+}));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Health check
+app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+
+// Servir archivos subidos estáticamente
+app.use('/uploads', require('./middleware/auth').authenticate, express.static('/var/www/inventario/uploads'));
+
+// Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/assets', require('./routes/assets'));
+app.use('/api/users', require('./routes/users'));
+app.use('/api/documents', require('./routes/documents'));
+app.use('/api/categories', require('./routes/categories'));
+app.use('/api/software', require('./routes/software'));
+app.use('/api/floorplan', require('./routes/floorplan-images'));
+app.use('/api/floorplan', require('./routes/floorplan'));
+app.use('/api/client-users', require('./routes/client-users'));
+app.use('/api/system', require('./routes/system'));
+app.use('/api/settings',   require('./routes/settings'));
+app.use('/api/deliveries', require('./routes/deliveries'));
+app.use('/api/services',   require('./routes/services'));
+app.use('/api/ldap',       require('./routes/ldap'));
+app.use('/api/scan',       require('./routes/scan'));
+app.use('/api/agents',     require('./routes/agents'));
+
+// 404
+app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
+
+// Error handler
+app.use((err, req, res, _next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Error interno del servidor' });
+});
+
+// Init DB and start server
+async function initDB() {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        full_name VARCHAR(100) NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(20) NOT NULL DEFAULT 'viewer' CHECK (role IN ('admin','editor','viewer')),
+        active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS assets (
+        id VARCHAR(50) PRIMARY KEY,
+        serial_number VARCHAR(100) NOT NULL,
+        category VARCHAR(30) NOT NULL DEFAULT 'other',
+        brand VARCHAR(100) NOT NULL,
+        model VARCHAR(150) NOT NULL,
+        price NUMERIC(12,2) NOT NULL DEFAULT 0,
+        purchase_date DATE,
+        purchase_order VARCHAR(100),
+        assigned_to VARCHAR(150),
+        status VARCHAR(20) NOT NULL DEFAULT 'activo' CHECK (status IN ('activo','inactivo','reparacion','baja')),
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_serial ON assets(serial_number);
+
+      CREATE TABLE IF NOT EXISTS categories (
+        id SERIAL PRIMARY KEY,
+        value VARCHAR(50) UNIQUE NOT NULL,
+        label VARCHAR(100) NOT NULL,
+        icon VARCHAR(50),
+        is_system BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS client_users (
+        id SERIAL PRIMARY KEY,
+        first_name VARCHAR(100) NOT NULL,
+        last_name VARCHAR(100) NOT NULL,
+        email VARCHAR(150),
+        phone VARCHAR(50),
+        department VARCHAR(100),
+        position VARCHAR(100),
+        employee_id VARCHAR(50) UNIQUE,
+        notes TEXT,
+        active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS software (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(200) NOT NULL,
+        vendor VARCHAR(150) NOT NULL,
+        version VARCHAR(50) NOT NULL DEFAULT '',
+        license_key TEXT,
+        license_type VARCHAR(30) NOT NULL DEFAULT 'perpetua'
+          CHECK (license_type IN ('perpetua','suscripcion','freeware','opensource','trial','volumen')),
+        seats INTEGER NOT NULL DEFAULT 1,
+        purchase_date DATE,
+        expiry_date DATE,
+        purchase_order VARCHAR(100),
+        price NUMERIC(12,2) NOT NULL DEFAULT 0,
+        status VARCHAR(20) NOT NULL DEFAULT 'activo'
+          CHECK (status IN ('activo','inactivo','expirado','baja')),
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS software_asset_links (
+        id SERIAL PRIMARY KEY,
+        software_id INTEGER NOT NULL REFERENCES software(id) ON DELETE CASCADE,
+        asset_id VARCHAR(50) NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+        notes TEXT,
+        assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(software_id, asset_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS software_user_links (
+        id SERIAL PRIMARY KEY,
+        software_id INTEGER NOT NULL REFERENCES software(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES client_users(id) ON DELETE CASCADE,
+        notes TEXT,
+        assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS asset_documents (
+        id SERIAL PRIMARY KEY,
+        asset_id VARCHAR(50) NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+        filename VARCHAR(255) NOT NULL,
+        original_name VARCHAR(255) NOT NULL,
+        mimetype VARCHAR(100) NOT NULL,
+        size INTEGER NOT NULL,
+        uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_asset_documents_id ON asset_documents(asset_id);
+
+      CREATE TABLE IF NOT EXISTS asset_user_links (
+        id SERIAL PRIMARY KEY,
+        asset_id VARCHAR(50) NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+        client_user_id INTEGER NOT NULL REFERENCES client_users(id) ON DELETE CASCADE,
+        link_type VARCHAR(30) NOT NULL DEFAULT 'asignado' CHECK (link_type IN ('asignado','responsable','usuario_secundario')),
+        notes TEXT,
+        assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(asset_id, client_user_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS asset_audit_log (
+        id SERIAL PRIMARY KEY,
+        asset_id VARCHAR(50) REFERENCES assets(id) ON DELETE SET NULL,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        user_name VARCHAR(150) NOT NULL DEFAULT 'Sistema',
+        action VARCHAR(20) NOT NULL CHECK (action IN ('created','updated','deleted')),
+        changes JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_asset_audit_log_asset ON asset_audit_log(asset_id);
+      CREATE INDEX IF NOT EXISTS idx_asset_audit_log_created ON asset_audit_log(created_at);
+
+      CREATE TABLE IF NOT EXISTS floorplan_items (
+        id SERIAL PRIMARY KEY,
+        floor INTEGER NOT NULL DEFAULT 0,
+        x FLOAT NOT NULL DEFAULT 0,
+        y FLOAT NOT NULL DEFAULT 0,
+        width FLOAT NOT NULL DEFAULT 120,
+        height FLOAT NOT NULL DEFAULT 80,
+        type VARCHAR(30) NOT NULL DEFAULT 'room',
+        label VARCHAR(150) NOT NULL DEFAULT 'Elemento',
+        color VARCHAR(20) NOT NULL DEFAULT '#3b82f6',
+        asset_id VARCHAR(50) REFERENCES assets(id) ON DELETE SET NULL,
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    // Create default admin if no users exist
+    const { rows } = await client.query('SELECT COUNT(*) FROM users');
+    if (parseInt(rows[0].count) === 0) {
+      const bcrypt = require('bcryptjs');
+      const hash = await bcrypt.hash('Admin1234!', 12);
+      await client.query(
+        `INSERT INTO users (username, full_name, email, password_hash, role, active)
+         VALUES ('admin', 'Administrador', 'admin@inventarioit.local', $1, 'admin', true)`,
+        [hash]
+      );
+      console.log('✅ Usuario admin creado: admin / Admin1234!');
+    }
+
+    // Insert default categories if none exist
+    const { rows: catRows } = await client.query('SELECT COUNT(*) FROM categories');
+    if (parseInt(catRows[0].count) === 0) {
+      const defaultCats = [
+        ['laptop',     'Portátil',    '💻', true],
+        ['desktop',    'Sobremesa',   '🖥️', true],
+        ['monitor',    'Monitor',     '🖵',  true],
+        ['printer',    'Impresora',   '🖨️', true],
+        ['switch',     'Switch',      '🔀', true],
+        ['router',     'Router',      '📡', true],
+        ['server',     'Servidor',    '🗄️', true],
+        ['tablet',     'Tablet',      '📱', true],
+        ['smartphone', 'Smartphone',  '📲', true],
+        ['peripheral', 'Periférico',  '🖱️', true],
+        ['ups',        'SAI/UPS',     '🔋', true],
+        ['other',      'Otro',        '📦', true],
+      ];
+      for (const [value, label, icon, is_system] of defaultCats) {
+        await client.query(
+          `INSERT INTO categories (value, label, icon, is_system) VALUES ($1,$2,$3,$4) ON CONFLICT (value) DO NOTHING`,
+          [value, label, icon, is_system]
+        );
+      }
+      console.log('✅ Categorías por defecto creadas');
+    }
+
+    console.log('✅ Base de datos inicializada correctamente');
+
+    // Migraciones no destructivas
+    await client.query(`
+      ALTER TABLE client_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+      ALTER TABLE assets ADD COLUMN IF NOT EXISTS department VARCHAR(100);
+
+      -- Descubrimiento de red (Fase 1): rangos + credenciales
+      CREATE TABLE IF NOT EXISTS scan_networks (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        cidr VARCHAR(64) NOT NULL,
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS scan_credentials (
+        id SERIAL PRIMARY KEY,
+        network_id INTEGER NOT NULL REFERENCES scan_networks(id) ON DELETE CASCADE,
+        type VARCHAR(20) NOT NULL DEFAULT 'ssh' CHECK (type IN ('ssh','snmp','winrm')),
+        label VARCHAR(100),
+        username VARCHAR(150),
+        secret_encrypted TEXT,
+        port INTEGER,
+        priority INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_scan_credentials_network ON scan_credentials(network_id);
+
+      -- Descubrimiento de red (Fase 2): trabajos de escaneo + resultados
+      CREATE TABLE IF NOT EXISTS scan_jobs (
+        id SERIAL PRIMARY KEY,
+        network_id INTEGER REFERENCES scan_networks(id) ON DELETE CASCADE,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        hosts_found INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        started_at TIMESTAMPTZ,
+        finished_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS scan_results (
+        id SERIAL PRIMARY KEY,
+        job_id INTEGER NOT NULL REFERENCES scan_jobs(id) ON DELETE CASCADE,
+        ip VARCHAR(64),
+        mac VARCHAR(64),
+        hostname TEXT,
+        vendor TEXT,
+        os TEXT,
+        open_ports TEXT,
+        serial_number TEXT,
+        brand TEXT,
+        model TEXT,
+        category VARCHAR(50),
+        enrich_method VARCHAR(20),
+        raw JSONB,
+        matched_asset_id VARCHAR(50),
+        imported BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_scan_results_job ON scan_results(job_id);
+
+      -- Columna nueva con la info estructurada del sistema escaneado (CPU,
+      -- RAM, discos, red, AD, etc.). Se rellena desde el scanner cuando el
+      -- enrich (WMI/SSH/SNMP) consigue datos detallados.
+      ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS system_info JSONB;
+      -- Lista de software instalado (array JSON con name/version/publisher/install_date/arch).
+      ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS software JSONB;
+
+      -- Resumen del equipo asociado a un asset (estilo Lansweeper). Se sobre-
+      -- escribe en cada escaneo exitoso. Las notas manuales son siempre
+      -- editables por el usuario y se preservan entre escaneos.
+      CREATE TABLE IF NOT EXISTS asset_system_info (
+        asset_id VARCHAR(50) PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+        scanned_data JSONB,
+        manual_notes TEXT,
+        scanned_at TIMESTAMPTZ,
+        source VARCHAR(20),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      -- Inventario de software instalado por activo (refrescado en cada escaneo
+      -- exitoso con WMI). Una fila por activo con el array completo en JSONB.
+      CREATE TABLE IF NOT EXISTS asset_software (
+        asset_id VARCHAR(50) PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+        software JSONB NOT NULL DEFAULT '[]'::jsonb,
+        scanned_at TIMESTAMPTZ,
+        source VARCHAR(20),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      -- Tabla generica de configuracion (SMTP, etc.)
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key VARCHAR(100) PRIMARY KEY,
+        value TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      -- Escaneos programados (cron)
+      CREATE TABLE IF NOT EXISTS scan_schedules (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(150) NOT NULL,
+        network_id INTEGER NOT NULL REFERENCES scan_networks(id) ON DELETE CASCADE,
+        cron_expr VARCHAR(100) NOT NULL,
+        timezone VARCHAR(64) NOT NULL DEFAULT 'Europe/Madrid',
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        notify_emails JSONB NOT NULL DEFAULT '[]'::jsonb,
+        last_run_at TIMESTAMPTZ,
+        last_run_job_id INTEGER,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      ALTER TABLE scan_jobs ADD COLUMN IF NOT EXISTS schedule_id INTEGER;
+      CREATE INDEX IF NOT EXISTS idx_scan_jobs_schedule ON scan_jobs(schedule_id);
+
+      -- Agentes remotos de inventario (equipos Windows/Linux que reportan
+      -- desde delegaciones no alcanzables por el escaneo central).
+      CREATE TABLE IF NOT EXISTS agent_tokens (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        token_hash VARCHAR(64) UNIQUE NOT NULL,
+        delegation VARCHAR(120),
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        auto_import BOOLEAN NOT NULL DEFAULT false,
+        notes TEXT,
+        last_seen TIMESTAMPTZ,
+        last_report_at TIMESTAMPTZ,
+        last_hostname TEXT,
+        last_ip VARCHAR(64),
+        last_os TEXT,
+        agent_version VARCHAR(50),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_tokens_enabled ON agent_tokens(enabled);
+      CREATE INDEX IF NOT EXISTS idx_agent_tokens_last_seen ON agent_tokens(last_seen);
+    `);
+  } finally {
+    client.release();
+  }
+}
+
+initDB()
+  .then(() => {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 Servidor iniciado en puerto ${PORT}`);
+
+      // ── Scheduler de escaneos programados ──
+      try {
+        const scheduler = require('./scheduler');
+        scheduler.init();
+      } catch (e) {
+        console.warn('Scheduler no disponible:', e.message);
+      }
+
+
+      // ── Cron: sync LDAP todos los días a las 12:00 ────────────────────────
+      try {
+        const cron         = require('node-cron');
+        const { runSync }  = require('./ldap-sync');
+        const { pool: p }  = require('./db');
+
+        // Load LDAP config from DB into env at startup
+        p.query(`SELECT value FROM app_settings WHERE key = 'ldap_config'`)
+          .then(({ rows }) => {
+            if (!rows.length) return;
+            try {
+              const cfg = JSON.parse(rows[0].value);
+              if (!process.env.LDAP_URL)       process.env.LDAP_URL       = cfg.url;
+              if (!process.env.LDAP_BIND_DN)   process.env.LDAP_BIND_DN   = cfg.bind_dn;
+              if (!process.env.LDAP_BIND_PASS) process.env.LDAP_BIND_PASS = cfg.bind_pass;
+              if (!process.env.LDAP_BASE_DN)   process.env.LDAP_BASE_DN   = cfg.base_dn;
+              if (cfg.filter)                  process.env.LDAP_FILTER     = cfg.filter;
+              console.log('🔗 Configuración LDAP cargada desde BD');
+            } catch (_) {}
+          }).catch(() => {});
+
+        // Schedule daily sync at 12:00
+        cron.schedule('0 12 * * *', () => {
+          console.log('⏰ Cron: iniciando sync LDAP diario (12:00)');
+          runSync().catch(err => console.error('Cron LDAP error:', err.message));
+        }, { timezone: 'Europe/Madrid' });
+
+        console.log('⏰ Cron LDAP programado: todos los días a las 12:00 (Europa/Madrid)');
+      } catch (_) {
+        // node-cron or ldap not installed — skip cron silently
+      }
+    });
+  })
+  .catch((err) => {
+    console.error('❌ Error al inicializar la base de datos:', err);
+    process.exit(1);
+  });

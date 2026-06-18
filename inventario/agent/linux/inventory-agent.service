@@ -1,0 +1,11 @@
+[Unit]
+Description=InventarioIT Linux inventory agent
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/inventario-agent.env
+ExecStart=/opt/inventario-agent/inventory-agent.py
+User=root
+Group=root
